@@ -77,3 +77,9 @@ See [docs/INSTALL.md](docs/INSTALL.md) for every file that gets touched.
 - [docs/INSTALL.md](docs/INSTALL.md): what the installer changes, launching, uninstalling
 - [docs/FINDINGS.md](docs/FINDINGS.md): the debugging path, pitfalls, and the benchmark
 - [docs/LEGAL.md](docs/LEGAL.md): licenses, and what may or may not be redistributed
+
+## License
+
+MIT (see [LICENSE](LICENSE)) for the original code. The patches follow their upstream licenses. This
+project is unofficial and not affiliated with Beat Games, Valve or Unity. See
+[docs/LEGAL.md](docs/LEGAL.md).

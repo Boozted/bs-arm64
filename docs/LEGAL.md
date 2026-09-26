@@ -9,9 +9,9 @@ source except what the build downloads from upstream.
 
 | Path | Origin | License |
 |---|---|---|
-| `src/steam-api/*` | original; generates code from Steamworks SDK headers **at build time**, taken from the Proton checkout | project license (see below) |
-| `src/unityopenxr/patch_unityopenxr.py`, `tools/*`, `install/*`, `build.sh` | original | project license |
-| `src/monoposixhelper/glib.h`, `config.h` | original shim | project license |
+| `src/steam-api/*` | original; generates code from Steamworks SDK headers **at build time**, taken from the Proton checkout | MIT |
+| `src/unityopenxr/patch_unityopenxr.py`, `tools/*`, `install/*`, `build.sh` | original | MIT |
+| `src/monoposixhelper/glib.h`, `config.h` | original shim | MIT |
 | `patches/openxr-loader/*` | changes to the Khronos OpenXR-SDK | Apache-2.0 (upstream) |
 | `patches/dxvk/*` | changes to DXVK | zlib (upstream) |
 
@@ -27,7 +27,7 @@ repository, which carries them in `lsteamclient/steamworks_sdk_*`. `sdk_inline_i
 | `openxr_loader.dll` | Khronos OpenXR-SDK | Apache-2.0 |
 | `dxgi.dll`, `d3d11.dll` | DXVK | zlib |
 | `MonoPosixHelper.dll` | Mono `zlib-helper.c` (MIT) + zlib (zlib) | MIT + zlib |
-| `steam_api64.dll` | this project | project license |
+| `steam_api64.dll` | this project | MIT |
 
 Anyone distributing the built binaries must follow those licenses. For the LGPL parts, that means
 offering the corresponding source; pointing to the pinned upstream tags plus this repo does that.
@@ -51,5 +51,5 @@ make the project name and README clearly unofficial. "Beat Saber" is a trademark
 
 ## Project license
 
-Not chosen yet. MIT or zlib would fit the original code and match DXVK and Mono. Choose one before
-publishing, and add a `LICENSE` file.
+The original code in this repository is MIT licensed (see [LICENSE](../LICENSE)). The patches in
+`patches/` fall under the licenses of the projects they modify.
