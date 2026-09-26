@@ -1,5 +1,10 @@
 # bs-arm64: native ARM64 Beat Saber on Proton
 
+> [!NOTE]
+> The easiest way to get this running on your Frame is the Frame-compatible BSManager fork, which
+> installs it with one click.
+> **[How to install on the Steam Frame](https://github.com/DaVarga/bs-manager/blob/bs-arm64/docs/steam-frame.md)**
+
 Run Beat Saber 1.44.1 as a **native Windows ARM64** program on ARM64 Linux under Proton, tested on the
 **Steam Frame**, instead of emulating the x64 build with FEX.
 
