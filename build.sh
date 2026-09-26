@@ -356,20 +356,55 @@ EOF
     (cd "$dist" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
 
     cat > "$dist/RELEASE_NOTES.md" <<EOF
-Native ARM64 Beat Saber **$GAME_VERSION** for **$PROTON_TAG** (Steam's "Proton 11.0 (ARM64)").
+Runs Beat Saber **$GAME_VERSION** as a native Windows ARM64 program under ARM64 Proton (tested on the
+Steam Frame) instead of emulating the x64 build with FEX.
 
-The Steam and OpenXR libraries work only with that exact Proton build. Check
-\`<Proton dir>/version\` before installing; the installer refuses a mismatch.
+## Works with
+
+| | |
+|---|---|
+| Proton | **$PROTON_TAG** only: Steam's "Proton 11.0 (ARM64)" at that build |
+| Beat Saber | **$GAME_VERSION** only (Unity $UNITY_VERSION), e.g. a BSManager instance |
+| VR | SteamVR (OpenXR) |
+| Mods | BSIPA 4.3.7 with Harmony mods (tested: SiraUtil, BSML, SongCore, BS Utils, CustomSabersLite, HitScoreVisualizer) |
+
+Check your Proton build before installing; it must print \`$PROTON_TAG\` (with an \`-arm64\` suffix):
+
+\`\`\`sh
+cut -d' ' -f2 ~/.steam/steam/steamapps/common/"Proton 11.0 (ARM64)"/version
+\`\`\`
+
+The installer refuses any other Proton build, because the Steam and OpenXR libraries talk directly to
+that Proton's own libraries. When Steam updates Proton, wait for a matching release.
+
+## Install
+
+Work on a **copy** of your $GAME_VERSION instance (BSManager can duplicate instances). The Wine prefix
+must exist: launch any game with it once.
 
 \`\`\`sh
 tar xf $name.tar.gz && cd $name
-./bs-arm64.sh install <Beat Saber $GAME_VERSION instance>   # also downloads the Unity player etc.
-./bs-arm64.sh launch  <instance>
+./bs-arm64.sh install ~/.local/share/BSManager/BSInstances/<copy>   # also downloads the Unity player etc.
+./bs-arm64.sh launch  ~/.local/share/BSManager/BSInstances/<copy>
+./bs-arm64.sh uninstall ~/.local/share/BSManager/BSInstances/<copy> # restores the x64 files
 \`\`\`
 
-Not included: the Unity ARM64 player, Unity's OpenXR plugin and Microsoft's VC++ runtime. The
-installer downloads them from their official sources. Corresponding source: \`SOURCES.md\`.
-Built from $repo/tree/$rev.
+If you (re)install BSIPA afterwards, run \`install\` again. See \`docs/INSTALL.md\` for every file it
+touches.
+
+## Known issues
+
+- If the headset goes into standby while SiraUtil restarts the XR session at startup, the game stays
+  on a black screen. Keep the headset on while the game starts.
+- Burst code runs as managed code (no ARM64 Burst library). LIV capture isn't available.
+
+## Not included
+
+The Unity ARM64 player, Unity's OpenXR plugin and Microsoft's VC++ runtime aren't redistributable. The
+installer downloads them from their official sources. Corresponding source for the binaries:
+\`SOURCES.md\`, built from $repo/tree/$rev.
+
+Unofficial project, not affiliated with Beat Games or Valve.
 EOF
     ls -la "$dist"
 }
