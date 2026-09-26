@@ -40,8 +40,34 @@ On Ubuntu, `needrestart` can block an unattended `apt` behind an interactive pro
 | `monoposixhelper` | `zlib-helper.c` + zlib → `MonoPosixHelper.dll` |
 | `doorstop` | BSIPA's Doorstop + generated ARM64 winhttp stubs → `winhttp.dll` |
 | `monomod` | MonoMod at BSIPA's commit + ABI patch → `MonoMod.Core.dll` (net452) |
+| `package` | not part of the default run: release tarball in `dist/` (see below) |
 
 A full build from scratch takes about 15–20 minutes, mostly Wine's header generation and DXVK.
+
+## Releases
+
+`./build.sh package` checks that every DLL is pure ARM64 (and `steam_api64.dll` below 350 KB), then
+writes `dist/bs-arm64-<version>-<PROTON_TAG>.tar.gz` plus its `.sha256`. The tarball holds the DLLs,
+`bs-arm64.sh` with its helpers and `versions.env`, the docs, `SHA256SUMS`, the upstream licenses in
+`licenses/`, and `SOURCES.md`, which names the exact upstream sources (the LGPL source offer). The
+version is `$BS_ARM64_VERSION`, or else `git describe --tags`.
+
+[.github/workflows/release.yml](../.github/workflows/release.yml) does this on GitHub:
+
+- **Push a tag** `v*` → full build, package, and a GitHub release with the tarball and checksum.
+- **Run it manually** (Actions → release → Run workflow) → build and package only. The tarball is
+  attached to the run as an artifact, which is useful as a dry run before tagging.
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+It runs on `ubuntu-24.04-arm`. If Arm runners aren't available for the repository, set the repository
+variable `BS_ARM64_RUNNER` to `ubuntu-24.04`. `deps/` is cached, keyed on `versions.env` and
+`patches/`.
+
+Each release is tied to one Proton build. When Valve updates Proton ARM64, update the pins (below) and
+tag a new release.
 
 ## Keeping in sync with Proton
 

@@ -36,6 +36,18 @@ repository, which carries them in `lsteamclient/steamworks_sdk_*`. `sdk_inline_i
 Anyone distributing the built binaries must follow those licenses. For the LGPL parts, that means
 offering the corresponding source; pointing to the pinned upstream tags plus this repo does that.
 
+`lsteamclient_a64.dll` and `steam_api64.dll` are compiled against the Steamworks SDK headers that
+Proton carries. Proton ships those under the Steamworks SDK license (`lsteamclient/LICENSE`) and
+distributes its own `lsteamclient` builds publicly; this project does the same.
+
+## Releases
+
+`./build.sh package` (and the GitHub release workflow) bundles exactly the files above, with
+`licenses/` holding each upstream license (Proton, the Steamworks SDK license, Wine's LGPL, DXVK and
+its submodules, OpenXR-SDK, zlib, Mono, Doorstop, MonoMod, llvm-mingw's runtime) and `SOURCES.md`
+linking the exact upstream sources and this repository's commit. Nothing from the next table is in a
+release.
+
 ## What is downloaded on the user's machine and never redistributed
 
 | File | Source | Why it isn't redistributed |

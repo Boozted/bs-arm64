@@ -7,11 +7,18 @@ The installer is `install/bs-arm64.sh`. It runs on the device (Steam Frame, Stea
 - **Proton 11.0 (ARM64)**, the exact version the DLLs were built for
 - the Wine prefix already created: launch any game with it once. The default is BSManager's shared
   prefix `~/.local/share/BSManager/SharedContent/compatdata`.
-- `out/` from `build.sh` (copy the whole repo to the device, or pass `--artifacts DIR`)
+- the DLLs: either a **release tarball** (unpack it and run `./bs-arm64.sh` from inside it; it uses
+  the DLLs next to it), or `out/` from `build.sh` (copy the whole repo to the device, or pass
+  `--artifacts DIR`)
+
+`install` checks that `<Proton dir>/version` matches the Proton build the DLLs were made for
+(`PROTON_TAG` in `versions.env`) and stops otherwise.
 
 Work on a **copy** of an instance. BSManager can duplicate instances.
 
 ## Commands
+
+From a release, run `./bs-arm64.sh` in the unpacked folder instead of `install/bs-arm64.sh`.
 
 ```sh
 install/bs-arm64.sh fetch                 # download Unity player, UnityOpenXR, VC++ runtime (cached)

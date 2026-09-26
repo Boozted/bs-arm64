@@ -3,3 +3,4 @@ obj/
 out/
 __pycache__/
 *.binlog
+dist/

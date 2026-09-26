@@ -15,6 +15,8 @@
 # Usage: ./build.sh [step...]   steps: toolchain fetch wine-tools lsteamclient wineopenxr
 #                                      steam-api openxr-loader dxvk monoposixhelper doorstop monomod
 #        (default: all, in that order)
+#        ./build.sh package        release tarball of out/ + installer + licenses into dist/
+#                                  (version: $BS_ARM64_VERSION, else `git describe --tags`)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
@@ -79,6 +81,8 @@ step_fetch() {
     git_fetch_commit https://github.com/nike4613/BeatSaber-IPA-Reloaded.git "$BSIPA_COMMIT" "$DEPS/bsipa"
     [ -f "$DEPS/zlib-helper.c" ] || curl -fsSL -o "$DEPS/zlib-helper.c" \
         "https://raw.githubusercontent.com/Unity-Technologies/mono/$UNITY_MONO_COMMIT/support/zlib-helper.c"
+    [ -f "$DEPS/mono-LICENSE" ] || curl -fsSL -o "$DEPS/mono-LICENSE" \
+        "https://raw.githubusercontent.com/Unity-Technologies/mono/$UNITY_MONO_COMMIT/LICENSE"
 }
 
 # widl/winebuild plus the IDL-generated and Vulkan headers that Wine-style PE
@@ -266,12 +270,117 @@ step_monomod() {
     cp "$src/artifacts/bin/MonoMod.Core/release_net452/MonoMod.Core.dll" "$OUT/"
 }
 
+# The DLLs a release ships; the installer needs all of them.
+RELEASE_DLLS=(lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll
+              MonoPosixHelper.dll winhttp.dll MonoMod.Core.dll)
+
+# Release tarball in dist/: the DLLs, the installer and its helpers, docs, the upstream
+# licenses, and SOURCES.md (where the corresponding source is, for the LGPL parts).
+step_package() {
+    local version=${BS_ARM64_VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)}
+    local name=bs-arm64-$version-$PROTON_TAG dist=$ROOT/dist
+    local stage=$dist/$name repo=${BS_ARM64_REPO_URL:-https://github.com/DaVarga/bs-arm64}
+    log "package $name"
+    local f
+    for f in "${RELEASE_DLLS[@]}"; do
+        [ -f "$OUT/$f" ] || { echo "$OUT/$f missing; run the full build first" >&2; exit 1; }
+    done
+    # Every native DLL must be pure ARM64 (0xaa64); MonoMod.Core.dll is IL.
+    python3 - "$OUT" "${RELEASE_DLLS[@]}" <<'PY'
+import struct, sys
+bad = []
+for name in sys.argv[2:]:
+    if name == 'MonoMod.Core.dll':
+        continue
+    d = open(f'{sys.argv[1]}/{name}', 'rb').read(4096)
+    machine = struct.unpack_from('<H', d, struct.unpack_from('<I', d, 0x3c)[0] + 4)[0]
+    if machine != 0xaa64:
+        bad.append(f'{name}: machine {machine:#x}')
+if bad:
+    sys.exit('not ARM64: ' + ', '.join(bad))
+PY
+    [ "$(stat -c %s "$OUT/steam_api64.dll")" -lt $((350 * 1024)) ] ||
+        { echo "steam_api64.dll must stay below 350 KB (BSIPA anti-piracy heuristic)" >&2; exit 1; }
+
+    rm -rf "${stage:?}" "$dist/$name.tar.gz" "$dist/$name.tar.gz.sha256"
+    mkdir -p "$stage/licenses"
+    for f in "${RELEASE_DLLS[@]}"; do cp "$OUT/$f" "$stage/"; done
+    cp "$ROOT/install/bs-arm64.sh" "$ROOT/versions.env" "$ROOT/src/unityopenxr/patch_unityopenxr.py" \
+       "$ROOT/tools/unity_pkg_extract.py" "$ROOT/tools/vcredist_extract.py" "$ROOT/LICENSE" "$ROOT/README.md" "$stage/"
+    cp -r "$ROOT/docs" "$stage/"
+
+    local l=$stage/licenses
+    cp "$PROTON/LICENSE" "$l/Proton-LICENSE"
+    cp "$PROTON/LICENSE.proton" "$l/Proton-LICENSE.proton"
+    cp "$PROTON/lsteamclient/LICENSE" "$l/Steamworks-SDK-LICENSE"
+    cp "$WINE/LICENSE" "$l/Wine-LICENSE"
+    cp "$WINE/COPYING.LIB" "$l/Wine-COPYING.LIB"
+    cp "$DEPS/dxvk/LICENSE" "$l/DXVK-LICENSE"
+    cp "$DEPS/dxvk/subprojects/dxbc-spirv/LICENSE" "$l/dxbc-spirv-LICENSE"
+    cp "$DEPS/dxvk/subprojects/libdisplay-info/LICENSE" "$l/libdisplay-info-LICENSE"
+    cp "$DEPS/OpenXR-SDK/LICENSE" "$l/OpenXR-SDK-LICENSE"
+    cp "$DEPS/zlib-$ZLIB_VERSION/LICENSE" "$l/zlib-LICENSE"
+    cp "$DEPS/mono-LICENSE" "$l/Mono-LICENSE"
+    cp "$DEPS/bsipa/Doorstop/LICENSE" "$l/Doorstop-LICENSE"
+    cp "$DEPS/monomod/LICENSE" "$l/MonoMod-LICENSE"
+    cp "$TC/LICENSE.TXT" "$l/llvm-mingw-LICENSE.TXT"
+
+    local rev
+    rev=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
+    cat > "$stage/SOURCES.md" <<EOF
+# Corresponding source
+
+The binaries in this release were built by \`build.sh\` from these exact sources. Each upstream
+license is in \`licenses/\`; this project's own code is MIT (\`LICENSE\`).
+
+| Component | Source |
+|---|---|
+| bs-arm64 (build script, patches, steam_api64, installer) | $repo/tree/$rev |
+| Proton $PROTON_TAG (lsteamclient, wineopenxr, Steamworks SDK headers) | https://github.com/ValveSoftware/Proton/tree/$PROTON_TAG |
+| Wine, Proton's fork (winecrt0, headers, widl, winebuild) | https://github.com/ValveSoftware/wine/tree/$WINE_COMMIT |
+| DXVK, Proton's fork, with its submodules | https://github.com/ValveSoftware/dxvk/tree/$DXVK_COMMIT |
+| OpenXR-SDK $OPENXR_SDK_TAG | https://github.com/KhronosGroup/OpenXR-SDK/tree/$OPENXR_SDK_TAG |
+| zlib $ZLIB_VERSION | https://github.com/madler/zlib/releases/tag/v$ZLIB_VERSION |
+| Mono \`support/zlib-helper.c\` (Unity's fork) | https://github.com/Unity-Technologies/mono/blob/$UNITY_MONO_COMMIT/support/zlib-helper.c |
+| BSIPA's Doorstop | https://github.com/nike4613/BeatSaber-IPA-Reloaded/tree/$BSIPA_COMMIT/Doorstop |
+| MonoMod | https://github.com/MonoMod/MonoMod/tree/$MONOMOD_COMMIT |
+| llvm-mingw $LLVM_MINGW_VERSION (toolchain; statically linked runtime parts) | https://github.com/mstorsjo/llvm-mingw/releases/tag/$LLVM_MINGW_VERSION |
+
+The changes to upstream code are the patches in \`patches/\` of the bs-arm64 tree above.
+To rebuild, run \`./build.sh\` there (see docs/BUILD.md).
+EOF
+
+    (cd "$stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | xargs -d '\n' sha256sum > "$dist/SHA256SUMS.tmp")
+    mv "$dist/SHA256SUMS.tmp" "$stage/SHA256SUMS"
+    tar -C "$dist" --owner=0 --group=0 --numeric-owner --sort=name -czf "$dist/$name.tar.gz" "$name"
+    (cd "$dist" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+
+    cat > "$dist/RELEASE_NOTES.md" <<EOF
+Native ARM64 Beat Saber **$GAME_VERSION** for **$PROTON_TAG** (Steam's "Proton 11.0 (ARM64)").
+
+The Steam and OpenXR libraries work only with that exact Proton build. Check
+\`<Proton dir>/version\` before installing; the installer refuses a mismatch.
+
+\`\`\`sh
+tar xf $name.tar.gz && cd $name
+./bs-arm64.sh install <Beat Saber $GAME_VERSION instance>   # also downloads the Unity player etc.
+./bs-arm64.sh launch  <instance>
+\`\`\`
+
+Not included: the Unity ARM64 player, Unity's OpenXR plugin and Microsoft's VC++ runtime. The
+installer downloads them from their official sources. Corresponding source: \`SOURCES.md\`.
+Built from $repo/tree/$rev.
+EOF
+    ls -la "$dist"
+}
+
 ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper doorstop monomod)
 STEPS=("$@")
 [ ${#STEPS[@]} -eq 0 ] && STEPS=("${ALL[@]}")
 for s in "${STEPS[@]}"; do
     "step_${s//-/_}"
 done
+[ "${STEPS[*]}" = package ] && exit 0
 cp "$ROOT/src/unityopenxr/patch_unityopenxr.py" "$ROOT/tools/unity_pkg_extract.py" "$ROOT/tools/vcredist_extract.py" "$OUT/"
 log "done"
 ls -la "$OUT"

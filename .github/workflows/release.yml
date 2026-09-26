@@ -1,0 +1,67 @@
+# Build the ARM64 DLLs and publish them as a GitHub release.
+#   push a tag v*        -> build, package, create the release with the tarball
+#   run manually         -> build and package only (tarball as a workflow artifact)
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # build.sh cross-compiles and works on either arch; set the BS_ARM64_RUNNER repository
+    # variable to ubuntu-24.04 if Arm runners aren't available for this repository.
+    runs-on: ${{ vars.BS_ARM64_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, for the version in the package name
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo NEEDRESTART_MODE=a apt-get install -y --no-install-recommends \
+            git curl python3 make gcc flex bison autoconf perl pkg-config \
+            cmake ninja-build meson glslang-tools
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Toolchain, upstream checkouts and Wine's generated headers; keyed on the pins.
+      - uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.arch }}-${{ hashFiles('versions.env', 'patches/**') }}
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Package
+        run: |
+          BS_ARM64_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }} \
+          BS_ARM64_REPO_URL=${{ github.server_url }}/${{ github.repository }} \
+            ./build.sh package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bs-arm64
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/RELEASE_NOTES.md
+
+      - name: Create release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source versions.env
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.tar.gz.sha256 \
+            --verify-tag --title "$GITHUB_REF_NAME ($PROTON_TAG, Beat Saber $GAME_VERSION)" \
+            --notes-file dist/RELEASE_NOTES.md

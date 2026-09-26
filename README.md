@@ -57,6 +57,17 @@ piece around it that only existed as x64 or ARM64EC has an ARM64 replacement. De
 
 On the Steam Frame, with BSManager, a 1.44.1 instance, and "Proton 11.0 (ARM64)":
 
+Download the release tarball that matches your Proton version (`<Proton dir>/version`) from the
+[releases page](https://github.com/DaVarga/bs-arm64/releases), then on the Frame:
+
+```sh
+tar xf bs-arm64-*.tar.gz && cd bs-arm64-*/
+./bs-arm64.sh install ~/.local/share/BSManager/BSInstances/1.44.1   # downloads the Unity player etc.
+./bs-arm64.sh launch  ~/.local/share/BSManager/BSInstances/1.44.1
+```
+
+Or build it yourself:
+
 ```sh
 # 1. build the open-source parts (any Linux host, x86_64 or aarch64); see docs/BUILD.md
 ./build.sh

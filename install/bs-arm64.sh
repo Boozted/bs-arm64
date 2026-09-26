@@ -14,7 +14,7 @@
 #   bs-arm64.sh launch    <instance> [--prefix DIR] [--proton DIR] [--debug]
 #       Start the game through Proton with the environment it needs.
 #
-# Defaults: --artifacts = ../out next to this script (build.sh output),
+# Defaults: --artifacts = this script's directory in a release, else ../out (build.sh output),
 #           --cache     = ~/.cache/bs-arm64,
 #           --prefix    = BSManager's shared compatdata,
 #           --proton    = Steam's "Proton 11.0 (ARM64)".
@@ -26,14 +26,15 @@ VERSIONS=$HERE/../versions.env
 # shellcheck source=../versions.env
 source "$VERSIONS"
 
-ARTIFACTS=$HERE/../out
+# Release tarball: the DLLs sit next to this script. Repo checkout: build.sh writes them to out/.
+if [ -f "$HERE/steam_api64.dll" ]; then ARTIFACTS=$HERE; else ARTIFACTS=$HERE/../out; fi
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/bs-arm64
 PREFIX=$HOME/.local/share/BSManager/SharedContent/compatdata
 PROTON="$HOME/.steam/steam/steamapps/common/Proton 11.0 (ARM64)"
 DEBUG=0
 
 BS_APP_ID=620980
-SUPPORTED_GAME_VERSION=1.44.1
+SUPPORTED_GAME_VERSION=$GAME_VERSION
 STATE_DIR=.bs-arm64             # inside the instance: backup + install record
 RUNTIME_DIR=drive_c/bs-arm64    # inside the prefix: WINEDLLPATH for the Wine builtins
 PLAYER_VARIATION=Variations/win_arm64_player_nondevelopment_mono
@@ -50,7 +51,7 @@ parse_opts() {
             --prefix) PREFIX=$2; shift 2 ;;
             --proton) PROTON=$2; shift 2 ;;
             --debug) DEBUG=1; shift ;;
-            -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+            -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
             *) POSITIONAL+=("$1"); shift ;;
         esac
     done
@@ -187,6 +188,11 @@ cmd_install() {
     local version
     version=$(cut -d_ -f1 "$INSTANCE/BeatSaberVersion.txt" 2>/dev/null || echo unknown)
     [ "$version" = "$SUPPORTED_GAME_VERSION" ] || die "instance is Beat Saber $version; only $SUPPORTED_GAME_VERSION (Unity $UNITY_VERSION) is supported"
+    # lsteamclient_a64/wineopenxr_a64 talk to this Proton's unix libraries: the build must match.
+    case $(proton_version) in
+        "$PROTON_TAG" | "$PROTON_TAG"-*) ;;
+        *) die "Proton is $(proton_version), but these DLLs were built for $PROTON_TAG; rebuild them (docs/BUILD.md)" ;;
+    esac
     for f in lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll MonoPosixHelper.dll; do
         [ -f "$ARTIFACTS/$f" ] || die "$ARTIFACTS/$f missing; run build.sh first (or pass --artifacts)"
     done
@@ -280,7 +286,7 @@ cmd_launch() {
     echo "pid $!"
 }
 
-[ $# -ge 1 ] || { sed -n '2,24p' "$0"; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,20p' "$0"; exit 1; }
 CMD=$1; shift
 parse_opts "$@"
 case $CMD in
@@ -288,5 +294,6 @@ case $CMD in
     install) cmd_install ;;
     uninstall) cmd_uninstall ;;
     launch) cmd_launch ;;
+    -h|--help|help) sed -n '2,20p' "$0" ;;
     *) die "unknown command $CMD" ;;
 esac
