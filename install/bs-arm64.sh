@@ -6,13 +6,16 @@
 #       Download the parts we may not redistribute, from their official sources:
 #       Unity 6000.0.40f1 Windows ARM64 player, Unity OpenXR 1.14.3 ARM64 plugin (import
 #       patched for desktop), Microsoft VC++ ARM64 runtime.
-#   bs-arm64.sh install   <instance> [--artifacts DIR] [--cache DIR] [--prefix DIR] [--proton DIR]
+#   bs-arm64.sh install   <instance> [--no-mods] [--artifacts DIR] [--cache DIR] [--prefix DIR] [--proton DIR]
 #       Back up the x64 files and install the ARM64 files into <instance>; set up the
 #       Wine prefix (ARM64 runtime dir, OpenXR runtime JSON, registry value).
+#       If BSIPA is installed, also install its ARM64 fixes, unless --no-mods is given
+#       (then the game always starts without mods).
 #   bs-arm64.sh uninstall <instance>
 #       Restore the x64 files from the backup.
-#   bs-arm64.sh launch    <instance> [--prefix DIR] [--proton DIR] [--debug]
+#   bs-arm64.sh launch    <instance> [--no-mods] [--prefix DIR] [--proton DIR] [--debug]
 #       Start the game through Proton with the environment it needs.
+#       --no-mods: start without mods (BSIPA isn't loaded) this time.
 #
 # Defaults: --artifacts = this script's directory in a release, else ../out (build.sh output),
 #           --cache     = ~/.cache/bs-arm64,
@@ -32,6 +35,7 @@ CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/bs-arm64
 PREFIX=$HOME/.local/share/BSManager/SharedContent/compatdata
 PROTON="$HOME/.steam/steam/steamapps/common/Proton 11.0 (ARM64)"
 DEBUG=0
+MODS=1
 
 BS_APP_ID=620980
 SUPPORTED_GAME_VERSION=$GAME_VERSION
@@ -51,7 +55,8 @@ parse_opts() {
             --prefix) PREFIX=$2; shift 2 ;;
             --proton) PROTON=$2; shift 2 ;;
             --debug) DEBUG=1; shift ;;
-            -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+            --no-mods) MODS=0; shift ;;
+            -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
             *) POSITIONAL+=("$1"); shift ;;
         esac
     done
@@ -151,6 +156,18 @@ install_bsipa_fixes() {
     swap_bsipa_file "$core" "$ARTIFACTS/MonoMod.Core.dll"
 }
 
+# --no-mods after an install with mods: put BSIPA's own files back.
+restore_bsipa_files() {
+    local rel
+    for rel in winhttp.dll Libs/MonoMod.Core.dll; do
+        if [ -f "$INSTANCE/$STATE_DIR/backup/$rel" ] && [ -f "$INSTANCE/$rel" ] &&
+            ! cmp -s "$INSTANCE/$STATE_DIR/backup/$rel" "$INSTANCE/$rel"; then
+            log "no mods: restoring BSIPA's $rel"
+            cp -p "$INSTANCE/$STATE_DIR/backup/$rel" "$INSTANCE/$rel"
+        fi
+    done
+}
+
 setup_prefix() {
     local pfx=$PREFIX/pfx rt=$PREFIX/pfx/$RUNTIME_DIR unix_lib=$PROTON/files/lib/wine/aarch64-unix
     [ -d "$pfx/drive_c" ] || die "Wine prefix $pfx does not exist; start any game with this prefix once first"
@@ -230,7 +247,12 @@ cmd_install() {
     # UnityOpenXR (UWP build) loads the loader by bare name: must be next to the exe
     install_file "$ARTIFACTS/openxr_loader.dll" "openxr_loader.dll"
 
-    install_bsipa_fixes
+    if [ "$MODS" = 1 ]; then
+        install_bsipa_fixes
+    else
+        restore_bsipa_files
+    fi
+    echo "$MODS" > "$INSTANCE/$STATE_DIR/mods"
     setup_prefix
     proton_version > "$INSTANCE/$STATE_DIR/proton-version"
     echo "$SUPPORTED_GAME_VERSION" > "$INSTANCE/$STATE_DIR/installed"
@@ -260,6 +282,12 @@ cmd_launch() {
     built_for=$(cat "$rt/proton-version" 2>/dev/null || echo unknown)
     # lsteamclient/wineopenxr Windows halves must match Proton's unix halves exactly.
     [ "$built_for" = "$(proton_version)" ] || die "Proton changed ($built_for -> $(proton_version)); rebuild and reinstall"
+    # Installed with --no-mods: BSIPA's winhttp.dll (if any) is still the x64 one.
+    [ "$(cat "$INSTANCE/$STATE_DIR/mods" 2>/dev/null || echo 1)" = 1 ] || MODS=0
+    # Mod loader: BSIPA's Doorstop (winhttp.dll) in the game dir, else Wine's builtin.
+    # Without mods, always the builtin, so Doorstop never loads.
+    local winhttp=n,b
+    [ "$MODS" = 1 ] || { winhttp=b; log "starting without mods"; }
 
     # Started outside a graphical session (e.g. over SSH): use the device's main X display.
     local env=(
@@ -271,8 +299,7 @@ cmd_launch() {
         STEAM_COMPAT_INSTALL_PATH="$INSTANCE"
         STEAM_COMPAT_CLIENT_INSTALL_PATH="$HOME/.steam/steam"
         WINEDLLPATH="$rt"
-        # Mod loader: prefer BSIPA's Doorstop (winhttp.dll) in the game dir; builtin if absent
-        WINEDLLOVERRIDES="winhttp=n,b"
+        WINEDLLOVERRIDES="winhttp=$winhttp"
         # Valve's fdm_injection layer spins forever in vkCreateDevice under Proton ARM64
         DISABLE_VULKAN_FDM_INJECTION_LAYER=1
     )
@@ -286,7 +313,7 @@ cmd_launch() {
     echo "pid $!"
 }
 
-[ $# -ge 1 ] || { sed -n '2,20p' "$0"; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,23p' "$0"; exit 1; }
 CMD=$1; shift
 parse_opts "$@"
 case $CMD in
@@ -294,6 +321,6 @@ case $CMD in
     install) cmd_install ;;
     uninstall) cmd_uninstall ;;
     launch) cmd_launch ;;
-    -h|--help|help) sed -n '2,20p' "$0" ;;
+    -h|--help|help) sed -n '2,23p' "$0" ;;
     *) die "unknown command $CMD" ;;
 esac

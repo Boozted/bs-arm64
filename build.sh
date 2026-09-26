@@ -389,7 +389,8 @@ tar xf $name.tar.gz && cd $name
 ./bs-arm64.sh uninstall ~/.local/share/BSManager/BSInstances/<copy> # restores the x64 files
 \`\`\`
 
-If you (re)install BSIPA afterwards, run \`install\` again. See \`docs/INSTALL.md\` for every file it
+Without mod support: \`install --no-mods\` (engine only), or \`launch --no-mods\` to start one
+time without mods. If you (re)install BSIPA afterwards, run \`install\` again. See \`docs/INSTALL.md\` for every file it
 touches.
 
 ## Known issues

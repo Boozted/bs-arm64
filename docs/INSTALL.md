@@ -28,7 +28,7 @@ install/bs-arm64.sh uninstall <instance>  # restore the x64 files
 ```
 
 Options: `--artifacts DIR`, `--cache DIR` (default `~/.cache/bs-arm64`), `--prefix DIR`,
-`--proton DIR`.
+`--proton DIR`, `--no-mods` (see [Without mods](#without-mods)).
 
 `fetch` streams the ~500 MB Unity package once and keeps about 40 MB.
 
@@ -75,6 +75,20 @@ keeps backups. Mods that ship their own native x64 DLLs won't load their native 
 Known issue: SiraUtil restarts the XR session at startup. If the headset goes into standby at that
 moment (for example, it isn't being worn), Unity sometimes doesn't recreate its eye textures, and the
 headset only shows a black window. Keep the headset on while the game starts, or restart the game.
+
+### Without mods
+
+```sh
+install/bs-arm64.sh install <instance> --no-mods   # ARM64 engine only; BSIPA's files stay untouched
+install/bs-arm64.sh launch  <instance> --no-mods   # start once without mods (instance installed with mods)
+```
+
+- `install --no-mods` installs only the ARM64 engine. BSIPA's `winhttp.dll` and
+  `Libs/MonoMod.Core.dll` are left alone, or put back if an earlier install had replaced them. The
+  choice is stored in `.bs-arm64/mods`, and such an instance always starts without mods. Run `install`
+  without the option to turn mods back on.
+- `launch --no-mods` starts the game vanilla this one time. It loads Wine's builtin `winhttp` instead
+  of BSIPA's Doorstop, so BSIPA and every mod stay unloaded; the files aren't changed.
 
 ## Launching
 
