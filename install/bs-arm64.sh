@@ -256,7 +256,10 @@ cmd_install() {
     setup_prefix
     proton_version > "$INSTANCE/$STATE_DIR/proton-version"
     echo "$SUPPORTED_GAME_VERSION" > "$INSTANCE/$STATE_DIR/installed"
-    log "done. Start with: $0 launch '$INSTANCE'"
+    log "done"
+    # Run by hand (not from a launcher such as BSManager): show how to start it
+    [ -t 1 ] && log "start with: $0 launch '$INSTANCE'"
+    return 0
 }
 
 cmd_uninstall() {
@@ -264,6 +267,11 @@ cmd_uninstall() {
     [ -n "$INSTANCE" ] && [ -f "$INSTANCE/$STATE_DIR/installed" ] || die "usage: uninstall <patched instance dir>"
     log "restoring x64 files in $INSTANCE"
     (cd "$INSTANCE/$STATE_DIR/backup" && find . -type f -print0) | while IFS= read -r -d '' f; do
+        f=${f#./}
+        # BSIPA's own files: only while BSIPA is still installed (uninstalling BSIPA removes them)
+        case $f in
+            winhttp.dll | Libs/MonoMod.Core.dll) [ -e "$INSTANCE/$f" ] || continue ;;
+        esac
         cp -p "$INSTANCE/$STATE_DIR/backup/$f" "$INSTANCE/$f"
     done
     while IFS= read -r f; do [ -n "$f" ] && rm -f "$INSTANCE/$f"; done < "$INSTANCE/$STATE_DIR/added"

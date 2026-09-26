@@ -55,6 +55,16 @@ piece around it that only existed as x64 or ARM64EC has an ARM64 replacement. De
 
 ## Quick start
 
+### With BSManager (easiest)
+
+The Steam Frame fork of BSManager, [DaVarga/bs-manager](https://github.com/DaVarga/bs-manager)
+(ARM64 AppImage on its releases page), fixes BSManager for ARM64 Proton and adds an **ARM64 tab**
+next to Mods for 1.44.1 instances. That tab downloads the release matching your Proton build and
+installs, reinstalls or removes it, with or without mod support. It also re-applies the ARM64 mod
+loader fixes after BSIPA is installed, and sets up the launch environment.
+
+### By hand
+
 On the Steam Frame, with BSManager, a 1.44.1 instance, and "Proton 11.0 (ARM64)":
 
 Download the release tarball that matches your Proton version (`<Proton dir>/version`) from the

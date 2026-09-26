@@ -1,5 +1,9 @@
 # Installing and running
 
+The easiest way is the ARM64 tab of the Steam Frame fork of BSManager
+([DaVarga/bs-manager](https://github.com/DaVarga/bs-manager)), which runs this installer for you.
+The rest of this page describes the installer itself.
+
 The installer is `install/bs-arm64.sh`. It runs on the device (Steam Frame, SteamOS) and needs only
 `bash`, `python3`, `curl`, `tar` and `bsdtar`, which ship with SteamOS. It also needs:
 
