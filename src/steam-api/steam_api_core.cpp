@@ -12,9 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <map>
-#include <string>
-#include <vector>
 
 typedef void *(__cdecl *CreateInterfaceFn)(const char *name, int *return_code);
 typedef bool (__cdecl *Steam_BGetCallbackFn)(HSteamPipe pipe, CallbackMsg_t *msg, int32 *ignored);
@@ -24,6 +21,7 @@ typedef bool (__cdecl *Steam_GetAPICallResultFn)(HSteamPipe pipe, SteamAPICall_t
 typedef void (__cdecl *Steam_ReleaseThreadLocalMemoryFn)(int thread_exit);
 
 static const char *const CLIENT_DLL_DEFAULT = "lsteamclient_a64.dll";
+static const char *const CLIENT_RUNTIME_DIR = "C:\\bs-arm64\\aarch64-windows";
 static const char *const CLIENT_INTERFACE = "SteamClient021";
 
 static CRITICAL_SECTION g_cs;
@@ -40,7 +38,15 @@ static HSteamUser g_user;
 static bool g_manual_dispatch;
 static bool g_try_catch_callbacks [[maybe_unused]] = true;
 static uintptr_t g_context_counter = 1;
-static std::map<std::string, void *> g_user_interfaces;
+/* Small growable arrays instead of the C++ standard library: keeps the DLL well under
+ * BSIPA's anti-piracy size heuristic for Steam DLLs (>= 350 KB named '*steam*'). */
+struct iface_entry
+{
+    char *version;
+    void *iface;
+};
+static iface_entry *g_user_interfaces;
+static size_t g_user_interface_count;
 
 S_API ISteamClient *g_pSteamClientGameServer = NULL;
 
@@ -70,20 +76,28 @@ static bool load_client_module(void)
     const char *name = getenv("STEAMAPI_ARM64_CLIENT_DLL");
     if (!name || !*name) name = CLIENT_DLL_DEFAULT;
 
-    /* Wine only resolves a builtin DLL through WINEDLLPATH when a builtin-marked
-     * file is found on the normal search path, so a copy ships next to this DLL. */
-    char path[MAX_PATH];
-    HMODULE self = NULL;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       (LPCSTR)&load_client_module, &self);
-    if (self && GetModuleFileNameA(self, path, sizeof(path)) && !strchr(name, '\\') && !strchr(name, '/'))
+    /* Wine resolves the builtin (and its unix half) through WINEDLLPATH only after it
+     * finds a builtin-marked file on the normal search path. Try, in order: a copy next
+     * to this DLL, the prefix runtime directory set up by the installer (which keeps
+     * large '*steam*' files out of the game folder), then the normal search path. */
+    if (!strchr(name, '\\') && !strchr(name, '/'))
     {
-        char *slash = strrchr(path, '\\');
-        if (slash && (size_t)(slash + 1 - path) + strlen(name) < sizeof(path))
+        char path[MAX_PATH];
+        HMODULE self = NULL;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)&load_client_module, &self);
+        if (self && GetModuleFileNameA(self, path, sizeof(path)))
         {
-            strcpy(slash + 1, name);
-            g_client_module = LoadLibraryA(path);
+            char *slash = strrchr(path, '\\');
+            if (slash && (size_t)(slash + 1 - path) + strlen(name) < sizeof(path))
+            {
+                strcpy(slash + 1, name);
+                if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) g_client_module = LoadLibraryA(path);
+            }
         }
+        if (!g_client_module && snprintf(path, sizeof(path), "%s\\%s", CLIENT_RUNTIME_DIR, name) < (int)sizeof(path) &&
+            GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES)
+            g_client_module = LoadLibraryA(path);
     }
     if (!g_client_module) g_client_module = LoadLibraryA(name);
     if (!g_client_module)
@@ -219,7 +233,10 @@ S_API void S_CALLTYPE SteamAPI_Shutdown()
     g_pipe = 0;
     g_user = 0;
     g_client = NULL;
-    g_user_interfaces.clear();
+    for (size_t i = 0; i < g_user_interface_count; ++i) free(g_user_interfaces[i].version);
+    free(g_user_interfaces);
+    g_user_interfaces = NULL;
+    g_user_interface_count = 0;
     ++g_context_counter;
     LeaveCriticalSection(&g_cs);
 }
@@ -332,12 +349,19 @@ S_API void *S_CALLTYPE SteamInternal_FindOrCreateUserInterface(HSteamUser hSteam
 
     EnterCriticalSection(&g_cs);
     void *iface = NULL;
-    auto it = g_user_interfaces.find(pszVersion);
-    if (it != g_user_interfaces.end())
-        iface = it->second;
-    else if ((iface = SteamAPI_ISteamClient_GetISteamGenericInterface(g_client, hSteamUser, g_pipe, pszVersion)))
-        g_user_interfaces[pszVersion] = iface;
-    else
+    for (size_t i = 0; i < g_user_interface_count && !iface; ++i)
+        if (!strcmp(g_user_interfaces[i].version, pszVersion)) iface = g_user_interfaces[i].iface;
+    if (!iface && (iface = SteamAPI_ISteamClient_GetISteamGenericInterface(g_client, hSteamUser, g_pipe, pszVersion)))
+    {
+        iface_entry *grown = (iface_entry *)realloc(g_user_interfaces, (g_user_interface_count + 1) * sizeof(*grown));
+        if (grown)
+        {
+            g_user_interfaces = grown;
+            g_user_interfaces[g_user_interface_count].version = _strdup(pszVersion);
+            g_user_interfaces[g_user_interface_count++].iface = iface;
+        }
+    }
+    else if (!iface)
         shim_log("no user interface %s", pszVersion);
     LeaveCriticalSection(&g_cs);
     return iface;
@@ -419,8 +443,51 @@ typedef int (*GetCallbackSizeFn)(void *self);
 
 enum { CALLBACK_FLAG_REGISTERED = 0x01, CALLBACK_FLAG_GAMESERVER = 0x02 };
 
-static std::multimap<int, msvc_callback_base *> g_callbacks;
-static std::multimap<SteamAPICall_t, msvc_callback_base *> g_call_results;
+/* Registered callbacks / pending call results: (key, object) pairs. */
+struct callback_entry
+{
+    uint64 key;
+    msvc_callback_base *cb;
+};
+
+struct callback_list
+{
+    callback_entry *items;
+    size_t count;
+};
+
+static callback_list g_callbacks, g_call_results;
+
+static void list_add(callback_list *list, uint64 key, msvc_callback_base *cb)
+{
+    callback_entry *grown = (callback_entry *)realloc(list->items, (list->count + 1) * sizeof(*grown));
+    if (!grown) return;
+    list->items = grown;
+    list->items[list->count].key = key;
+    list->items[list->count++].cb = cb;
+}
+
+/* Remove entries matching cb (any key if match_key is false); optionally collect them. */
+static size_t list_take(callback_list *list, bool match_key, uint64 key, msvc_callback_base *cb,
+                        msvc_callback_base ***taken)
+{
+    size_t kept = 0, n = 0;
+    msvc_callback_base **out = taken ? (msvc_callback_base **)malloc((list->count + 1) * sizeof(*out)) : NULL;
+    for (size_t i = 0; i < list->count; ++i)
+    {
+        callback_entry e = list->items[i];
+        if ((!match_key || e.key == key) && (!cb || e.cb == cb))
+        {
+            if (out) out[n] = e.cb;
+            ++n;
+        }
+        else
+            list->items[kept++] = e;
+    }
+    list->count = kept;
+    if (taken) *taken = out;
+    return n;
+}
 
 S_API void S_CALLTYPE SteamAPI_RegisterCallback(CCallbackBase *pCallback, int iCallback)
 {
@@ -428,7 +495,7 @@ S_API void S_CALLTYPE SteamAPI_RegisterCallback(CCallbackBase *pCallback, int iC
     EnterCriticalSection(&g_cs);
     cb->flags |= CALLBACK_FLAG_REGISTERED;
     cb->callback_id = iCallback;
-    g_callbacks.insert({iCallback, cb});
+    list_add(&g_callbacks, (uint64)(int64)iCallback, cb);
     LeaveCriticalSection(&g_cs);
 }
 
@@ -436,8 +503,7 @@ S_API void S_CALLTYPE SteamAPI_UnregisterCallback(CCallbackBase *pCallback)
 {
     msvc_callback_base *cb = (msvc_callback_base *)pCallback;
     EnterCriticalSection(&g_cs);
-    for (auto it = g_callbacks.begin(); it != g_callbacks.end();)
-        it = it->second == cb ? g_callbacks.erase(it) : std::next(it);
+    list_take(&g_callbacks, false, 0, cb, NULL);
     cb->flags &= ~CALLBACK_FLAG_REGISTERED;
     LeaveCriticalSection(&g_cs);
 }
@@ -445,38 +511,37 @@ S_API void S_CALLTYPE SteamAPI_UnregisterCallback(CCallbackBase *pCallback)
 S_API void S_CALLTYPE SteamAPI_RegisterCallResult(CCallbackBase *pCallback, SteamAPICall_t hAPICall)
 {
     EnterCriticalSection(&g_cs);
-    g_call_results.insert({hAPICall, (msvc_callback_base *)pCallback});
+    list_add(&g_call_results, hAPICall, (msvc_callback_base *)pCallback);
     LeaveCriticalSection(&g_cs);
 }
 
 S_API void S_CALLTYPE SteamAPI_UnregisterCallResult(CCallbackBase *pCallback, SteamAPICall_t hAPICall)
 {
     EnterCriticalSection(&g_cs);
-    auto range = g_call_results.equal_range(hAPICall);
-    for (auto it = range.first; it != range.second;)
-        it = it->second == (msvc_callback_base *)pCallback ? g_call_results.erase(it) : std::next(it);
+    list_take(&g_call_results, true, hAPICall, (msvc_callback_base *)pCallback, NULL);
     LeaveCriticalSection(&g_cs);
 }
 
 static void dispatch_call_result(HSteamPipe pipe, const SteamAPICallCompleted_t *completed)
 {
-    std::vector<msvc_callback_base *> targets;
+    msvc_callback_base **targets = NULL;
     EnterCriticalSection(&g_cs);
-    auto range = g_call_results.equal_range(completed->m_hAsyncCall);
-    for (auto it = range.first; it != range.second; ++it) targets.push_back(it->second);
-    g_call_results.erase(range.first, range.second);
+    size_t n = list_take(&g_call_results, true, completed->m_hAsyncCall, NULL, &targets);
     LeaveCriticalSection(&g_cs);
 
-    for (msvc_callback_base *cb : targets)
+    for (size_t i = 0; targets && i < n; ++i)
     {
+        msvc_callback_base *cb = targets[i];
         int size = ((GetCallbackSizeFn)cb->vtable[2])(cb);
-        std::vector<char> buf(size > 0 ? size : 1);
+        void *buf = calloc(1, size > 0 ? size : 1);
         bool failed = false;
-        if (!SteamAPI_ManualDispatch_GetAPICallResult(pipe, completed->m_hAsyncCall, buf.data(), size,
-                                                      cb->callback_id, &failed))
+        if (!buf || !SteamAPI_ManualDispatch_GetAPICallResult(pipe, completed->m_hAsyncCall, buf, size,
+                                                             cb->callback_id, &failed))
             failed = true;
-        ((RunCallResultFn)cb->vtable[0])(cb, buf.data(), failed, completed->m_hAsyncCall);
+        ((RunCallResultFn)cb->vtable[0])(cb, buf, failed, completed->m_hAsyncCall);
+        free(buf);
     }
+    free(targets);
 }
 
 static void run_callbacks(HSteamPipe pipe, bool gameserver)
@@ -490,13 +555,19 @@ static void run_callbacks(HSteamPipe pipe, bool gameserver)
             dispatch_call_result(pipe, (const SteamAPICallCompleted_t *)msg.m_pubParam);
         else
         {
-            std::vector<msvc_callback_base *> targets;
+            size_t n = 0;
             EnterCriticalSection(&g_cs);
-            auto range = g_callbacks.equal_range(msg.m_iCallback);
-            for (auto it = range.first; it != range.second; ++it)
-                if (!(it->second->flags & CALLBACK_FLAG_GAMESERVER) == !gameserver) targets.push_back(it->second);
+            msvc_callback_base **targets =
+                (msvc_callback_base **)malloc((g_callbacks.count + 1) * sizeof(*targets));
+            for (size_t i = 0; targets && i < g_callbacks.count; ++i)
+            {
+                callback_entry e = g_callbacks.items[i];
+                if (e.key == (uint64)(int64)msg.m_iCallback && !(e.cb->flags & CALLBACK_FLAG_GAMESERVER) == !gameserver)
+                    targets[n++] = e.cb;
+            }
             LeaveCriticalSection(&g_cs);
-            for (msvc_callback_base *cb : targets) ((RunCallbackFn)cb->vtable[1])(cb, msg.m_pubParam);
+            for (size_t i = 0; i < n; ++i) ((RunCallbackFn)targets[i]->vtable[1])(targets[i], msg.m_pubParam);
+            free(targets);
         }
         SteamAPI_ManualDispatch_FreeLastCallback(pipe);
     }

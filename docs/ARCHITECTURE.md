@@ -76,10 +76,10 @@ first in Wine's DLL search path. Its unix half is a symlink, `lsteamclient_a64.s
 
 - stamp the "Wine builtin DLL" marker into the DOS header,
 - put the DLL in `$WINEDLLPATH/aarch64-windows/` and the symlink in `$WINEDLLPATH/aarch64-unix/`,
-- ship a second copy next to `steam_api64.dll`.
+- have `steam_api64.dll` load that file by its full path.
 
-The copy next to `steam_api64.dll` is needed because Wine only resolves builtins through
-`WINEDLLPATH` after it finds a builtin-marked file on the normal search path.
+Loading by full path is what makes it work: Wine resolves a builtin through `WINEDLLPATH` only after
+it finds a builtin-marked file on the normal search path, or one given by path.
 
 **steam_api64.dll.** This is a new implementation of the Steamworks SDK 1.61 flat API. It
 exports all 1,089 symbols of the real DLL.
@@ -109,6 +109,12 @@ exports all 1,089 symbols of the real DLL.
   vtables.
 
 Env var `STEAMAPI_ARM64_LOG=1` logs init to stderr.
+
+`steam_api64.dll` looks for `lsteamclient_a64.dll` in this order:
+1. the name in `STEAMAPI_ARM64_CLIENT_DLL`
+2. next to itself
+3. `C:\bs-arm64\aarch64-windows\`, the installer's location
+4. the normal DLL search path
 
 ### OpenXR
 
@@ -178,6 +184,46 @@ fix it. They're taken from `vc_redist.arm64.exe` by
 them with bsdtar.
 
 Fixing Wine's ARM64 C++ EH would remove this dependency (see FINDINGS).
+
+## Mods (BSIPA)
+
+BSIPA works on the ARM64 build once two of its native/low-level pieces are replaced. The
+installer does this automatically when it finds BSIPA in the instance (`winhttp.dll`).
+
+**Doorstop (`winhttp.dll`).** BSIPA injects itself through its fork of Unity Doorstop: a `winhttp.dll`
+proxy in the game folder. It hooks `GetProcAddress` in `UnityPlayer.dll`'s import table and loads
+`IPA.Injector.dll` when Mono initialises. The ARM64 `UnityPlayer.dll` imports `GetProcAddress`,
+`GetMessageA`/`PeekMessageA` and `WINHTTP.dll` exactly like x64, so the hooks work unchanged. Only
+the binary is x64. We build BSIPA's Doorstop source for ARM64. Its MSVC-specific parts are handled
+by [src/doorstop](../src/doorstop):
+- **Mini CRT:** Doorstop brings its own, which is renamed so it doesn't clash with the mingw headers.
+- **winhttp forwarding stubs:** they're generated as explicit `adrp/add/ldr/br x16` jumps, instead
+  of relying on MSVC turning a C call into a tail jump.
+
+`launch` sets `WINEDLLOVERRIDES=winhttp=n,b` so the proxy in the game folder is used.
+
+**MonoMod.Core (Harmony).** Harmony 2.x patches methods through MonoMod.Core 1.3.3, which already has
+an ARM64 detour backend. Its `WindowsSystem` only defines the default calling convention for x86 and
+x64, so on Windows ARM64 it throws `Cannot use Mono system, because the underlying system doesn't
+provide a default ABI!`.
+
+[The fix](../patches/monomod/0001-windows-arm64-default-abi.patch) gives Windows ARM64 the same ABI
+description MonoMod uses on Linux and macOS ARM64. For Mono's own code, Windows ARM64 follows
+AAPCS64: `this` in x0, the return buffer in x8, and the same type classification.
+
+We rebuild MonoMod.Core from the exact commit BSIPA ships (`1.3.3+aa4a84749`, net452) with that
+change. The assembly identity (version, unsigned, references) is unchanged, so Harmony binds to it as
+is. The installer only replaces a `Libs/MonoMod.Core.dll` of that exact version. This belongs
+upstream in MonoMod.
+
+**BSIPA's anti-piracy check.** `AntiPiracy.IsInvalid` refuses to load if any file whose name
+contains "steam" is 350 KB or larger in the game folder or `Beat Saber_Data/Plugins`. That heuristic
+catches Steam emulators. Our DLLs are not emulators: they go through the real Steam client and its
+ownership check. We keep them out of the heuristic's range legitimately:
+- `lsteamclient_a64.dll` lives only in the prefix runtime directory, `C:\bs-arm64\aarch64-windows`.
+  `steam_api64.dll` looks for it there.
+- `steam_api64.dll` is 91 KB: no C++ runtime, `-Os`, stripped. The real x64 one is 319 KB.
+  `build.sh` fails if it grows to 350 KB.
 
 ## Wine prefix and launch environment
 

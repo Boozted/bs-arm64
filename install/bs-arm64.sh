@@ -117,6 +117,39 @@ install_file() { # <src> <instance-relative dst>
     cp "$src" "$dst"
 }
 
+swap_bsipa_file() { # <instance-relative path> <replacement>
+    local rel=$1 src=$2
+    if cmp -s "$INSTANCE/$rel" "$src"; then return 0; fi
+    # Keep the first backup: that's BSIPA's original, not an earlier build of ours.
+    if [ ! -e "$INSTANCE/$STATE_DIR/backup/$rel" ]; then
+        mkdir -p "$(dirname "$INSTANCE/$STATE_DIR/backup/$rel")"
+        cp -p "$INSTANCE/$rel" "$INSTANCE/$STATE_DIR/backup/$rel"
+    fi
+    cp "$src" "$INSTANCE/$rel"
+}
+
+# BSIPA (mod loader) needs two ARM64 fixes; applied only when BSIPA is installed.
+# Run install again after (re)installing BSIPA, since IPA.exe copies its x64 files back.
+#  - Doorstop (winhttp.dll): its x64 build can't load into the ARM64 player.
+#  - MonoMod.Core.dll: has no Windows ARM64 ABI, so Harmony can't patch anything.
+install_bsipa_fixes() {
+    [ -f "$INSTANCE/winhttp.dll" ] || return 0
+    [ -f "$ARTIFACTS/winhttp.dll" ] || die "BSIPA is installed but $ARTIFACTS/winhttp.dll is missing; run build.sh"
+    log "BSIPA found: installing the ARM64 Doorstop (winhttp.dll)"
+    swap_bsipa_file winhttp.dll "$ARTIFACTS/winhttp.dll"
+
+    local core=Libs/MonoMod.Core.dll
+    [ -f "$INSTANCE/$core" ] || return 0
+    # Only replace the exact version BSIPA ships (or our own build of it from a previous install).
+    if ! grep -qaE "$MONOMOD_CORE_MATCH" "$INSTANCE/$core"; then
+        echo "warning: $core is not MonoMod.Core $MONOMOD_CORE_VERSION; not replacing it (Harmony mods won't work)" >&2
+        return 0
+    fi
+    [ -f "$ARTIFACTS/MonoMod.Core.dll" ] || die "$ARTIFACTS/MonoMod.Core.dll is missing; run build.sh monomod"
+    log "BSIPA found: installing MonoMod.Core with the Windows ARM64 ABI"
+    swap_bsipa_file "$core" "$ARTIFACTS/MonoMod.Core.dll"
+}
+
 setup_prefix() {
     local pfx=$PREFIX/pfx rt=$PREFIX/pfx/$RUNTIME_DIR unix_lib=$PROTON/files/lib/wine/aarch64-unix
     [ -d "$pfx/drive_c" ] || die "Wine prefix $pfx does not exist; start any game with this prefix once first"
@@ -180,12 +213,18 @@ cmd_install() {
     install_file "$vc/msvcp140.dll" "msvcp140.dll"
     # Native plugins, looked up by the ARM64 player in Plugins/ARM64
     install_file "$ARTIFACTS/steam_api64.dll" "$plugins/steam_api64.dll"
-    install_file "$ARTIFACTS/lsteamclient_a64.dll" "$plugins/lsteamclient_a64.dll"
+    # lsteamclient_a64.dll lives only in the prefix runtime dir (C:\bs-arm64): BSIPA's
+    # anti-piracy check rejects large '*steam*' files inside the game folder.
+    if [ -f "$INSTANCE/$plugins/lsteamclient_a64.dll" ]; then
+        rm -f "$INSTANCE/$plugins/lsteamclient_a64.dll"
+        sed -i '\#/lsteamclient_a64.dll$#d' "$INSTANCE/$STATE_DIR/added"
+    fi
     install_file "$oxr" "$plugins/UnityOpenXR.dll"
     install_file "$ARTIFACTS/openxr_loader.dll" "$plugins/openxr_loader.dll"
     # UnityOpenXR (UWP build) loads the loader by bare name: must be next to the exe
     install_file "$ARTIFACTS/openxr_loader.dll" "openxr_loader.dll"
 
+    install_bsipa_fixes
     setup_prefix
     proton_version > "$INSTANCE/$STATE_DIR/proton-version"
     echo "$SUPPORTED_GAME_VERSION" > "$INSTANCE/$STATE_DIR/installed"
@@ -226,6 +265,8 @@ cmd_launch() {
         STEAM_COMPAT_INSTALL_PATH="$INSTANCE"
         STEAM_COMPAT_CLIENT_INSTALL_PATH="$HOME/.steam/steam"
         WINEDLLPATH="$rt"
+        # Mod loader: prefer BSIPA's Doorstop (winhttp.dll) in the game dir; builtin if absent
+        WINEDLLOVERRIDES="winhttp=n,b"
         # Valve's fdm_injection layer spins forever in vkCreateDevice under Proton ARM64
         DISABLE_VULKAN_FDM_INJECTION_LAYER=1
     )

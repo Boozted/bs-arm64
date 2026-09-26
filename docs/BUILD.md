@@ -14,6 +14,9 @@ sudo apt install git curl python3 make gcc flex bison autoconf perl \
 
 `build.sh` downloads the llvm-mingw toolchain (pinned release) itself.
 
+The `monomod` step also needs a **.NET 10 SDK** with `dotnet` on `PATH`
+(https://dot.net/v1/dotnet-install.sh). Without it, the step is skipped.
+
 On Ubuntu, `needrestart` can block an unattended `apt` behind an interactive prompt. Use
 `sudo NEEDRESTART_MODE=a apt install …`.
 
@@ -35,6 +38,8 @@ On Ubuntu, `needrestart` can block an unattended `apt` behind an interactive pro
 | `openxr-loader` | apply patch, CMake + Ninja → `openxr_loader.dll` |
 | `dxvk` | apply patches, Meson cross build → `dxgi.dll`, `d3d11.dll` |
 | `monoposixhelper` | `zlib-helper.c` + zlib → `MonoPosixHelper.dll` |
+| `doorstop` | BSIPA's Doorstop + generated ARM64 winhttp stubs → `winhttp.dll` |
+| `monomod` | MonoMod at BSIPA's commit + ABI patch → `MonoMod.Core.dll` (net452) |
 
 A full build from scratch takes about 15–20 minutes, mostly Wine's header generation and DXVK.
 

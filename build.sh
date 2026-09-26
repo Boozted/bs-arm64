@@ -8,10 +8,12 @@
 #   openxr_loader.dll     Khronos OpenXR loader 1.1.45 for Windows ARM64 (patched)
 #   dxgi.dll, d3d11.dll   DXVK (Proton's commit) for aarch64
 #   MonoPosixHelper.dll   Mono's zlib helper (System.IO.Compression) for Windows ARM64
+#   winhttp.dll           BSIPA's Doorstop injector (mod loader entry point) for Windows ARM64
+#   MonoMod.Core.dll      MonoMod.Core as shipped by BSIPA, plus the Windows ARM64 ABI (Harmony)
 #   patch_unityopenxr.py  copied for install/
 #
 # Usage: ./build.sh [step...]   steps: toolchain fetch wine-tools lsteamclient wineopenxr
-#                                      steam-api openxr-loader dxvk monoposixhelper
+#                                      steam-api openxr-loader dxvk monoposixhelper doorstop monomod
 #        (default: all, in that order)
 set -euo pipefail
 
@@ -74,6 +76,7 @@ step_fetch() {
     fi
     [ -d "$DEPS/OpenXR-SDK/.git" ] || git clone -q --depth 1 --branch "$OPENXR_SDK_TAG" https://github.com/KhronosGroup/OpenXR-SDK.git "$DEPS/OpenXR-SDK"
     [ -d "$DEPS/zlib-$ZLIB_VERSION" ] || curl -fsSL "https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz" | tar xz -C "$DEPS"
+    git_fetch_commit https://github.com/nike4613/BeatSaber-IPA-Reloaded.git "$BSIPA_COMMIT" "$DEPS/bsipa"
     [ -f "$DEPS/zlib-helper.c" ] || curl -fsSL -o "$DEPS/zlib-helper.c" \
         "https://raw.githubusercontent.com/Unity-Technologies/mono/$UNITY_MONO_COMMIT/support/zlib-helper.c"
 }
@@ -160,11 +163,16 @@ step_steam_api() {
     ln -sfn "$sdk" "$o/inc/steam"
     python3 "$src/gen.py" "$PROTON/lsteamclient" "$o"
     python3 "$src/gen_sdk_inline.py" "$sdk/steamnetworkingtypes.h" "$o/sdk_inline_impl.inc"
-    local flags=(-O2 -I"$o/inc" -I"$src" -I"$o" -Wall -Wno-unused-parameter -Wno-unused-function -Wno-pragma-pack -Wno-unknown-pragmas)
+    # Size matters: BSIPA's anti-piracy check rejects any file named '*steam*' of 350 KB or
+    # more in the game folder. No C++ runtime, no exceptions/RTTI, -Os, stripped.
+    local flags=(-Os -fno-exceptions -fno-rtti -I"$o/inc" -I"$src" -I"$o" -Wall -Wno-unused-parameter -Wno-unused-function -Wno-pragma-pack -Wno-unknown-pragmas)
     $CXX -c "${flags[@]}" "$o/flat_generated.cpp" -o "$o/flat_generated.o"
     $CXX -c "${flags[@]}" "$src/steam_api_core.cpp" -o "$o/steam_api_core.o"
     $CXX -c "${flags[@]}" "$src/steam_api_helpers.cpp" -o "$o/steam_api_helpers.o"
-    $CXX -shared -O2 -static -o "$OUT/steam_api64.dll" "$o"/flat_generated.o "$o"/steam_api_core.o "$o"/steam_api_helpers.o
+    $CXX -shared -Os -s -static -o "$OUT/steam_api64.dll" "$o"/flat_generated.o "$o"/steam_api_core.o "$o"/steam_api_helpers.o
+    local size
+    size=$(stat -c %s "$OUT/steam_api64.dll")
+    [ "$size" -lt $((350 * 1024)) ] || { echo "steam_api64.dll is $size bytes; must stay below 350 KB (BSIPA anti-piracy heuristic)" >&2; exit 1; }
 }
 
 step_openxr_loader() {
@@ -225,7 +233,40 @@ step_monoposixhelper() {
         "$DEPS/zlib-helper.c" "$z"/{adler32,crc32,deflate,inflate,inffast,inftrees,trees,zutil}.c
 }
 
-ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper)
+step_doorstop() {
+    log "winhttp.dll (BSIPA Doorstop)"
+    local src=$DEPS/bsipa/Doorstop/Proxy o=$OBJ/doorstop
+    mkdir -p "$o"
+    python3 "$ROOT/src/doorstop/gen_proxy_arm64.py" "$src/proxy.c" "$o/proxy_arm64.c"
+    $CC -O2 -fgnu89-inline -fno-builtin -shared -nostdlib -Wl,--entry,DllMain \
+        -DUNICODE -D_UNICODE -DNDEBUG -D_WINDOWS -D_USRDLL -DNOGDI \
+        -I"$ROOT/src/doorstop/shim" -I"$src" -o "$OUT/winhttp.dll" \
+        "$ROOT/src/doorstop/doorstop_arm64.c" "$ROOT/src/doorstop/compat.c" "$o/proxy_arm64.c" "$src/proxy.def" \
+        -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lucrt
+}
+
+# Harmony (via MonoMod.Core) has no default ABI for Windows ARM64 and refuses to patch.
+# Rebuild the exact MonoMod.Core that BSIPA ships with the one-line ABI fix.
+# Needs a .NET 10 SDK (dotnet on PATH).
+step_monomod() {
+    log "MonoMod.Core.dll (Windows ARM64 ABI)"
+    local src=$DEPS/monomod
+    command -v dotnet >/dev/null || { echo "dotnet (.NET 10 SDK) not found; skipping MonoMod.Core" >&2; return 0; }
+    if [ ! -d "$src/.git" ]; then
+        git clone -q --filter=blob:none https://github.com/MonoMod/MonoMod.git "$src"
+        git -C "$src" checkout -q "$MONOMOD_COMMIT"
+        git -C "$src" submodule update -q --init
+    fi
+    git -C "$src" apply --check "$ROOT/patches/monomod/"*.patch 2>/dev/null && git -C "$src" apply "$ROOT/patches/monomod/"*.patch
+    # The repo pins an exact SDK feature band; any 10.0.x SDK builds it.
+    sed -i 's/"rollForward": "latestPatch"/"rollForward": "latestFeature"/' "$src/global.json"
+    # Run from the MonoMod checkout: its Directory.Build.rsp writes msbuild.binlog to the cwd.
+    (cd "$src" && DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet build src/MonoMod.Core/MonoMod.Core.csproj -c Release -f net452 \
+        -p:ContinuousIntegrationBuild=true >/dev/null)
+    cp "$src/artifacts/bin/MonoMod.Core/release_net452/MonoMod.Core.dll" "$OUT/"
+}
+
+ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper doorstop monomod)
 STEPS=("$@")
 [ ${#STEPS[@]} -eq 0 ] && STEPS=("${ALL[@]}")
 for s in "${STEPS[@]}"; do

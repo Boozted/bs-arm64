@@ -89,6 +89,23 @@ In the game, app CPU time per frame went from 7.8–8.8 ms to 3.3 ms (see the RE
 - A game whose VR session never opens spins at over 200 % CPU. Always stop test instances
   (`wineserver -k` on the prefix).
 
+## Mods
+
+- BSIPA 4.3.7 ships MonoMod.Core 1.3.3, which has an `Arm64Arch`, and Harmony 2.16. Its
+  `WindowsSystem` sets `DefaultAbi` only for x86 and x64, so `MonoRuntime` refuses to start:
+  `Cannot use Mono system, because the underlying system doesn't provide a default ABI!`. With the
+  AAPCS64 ABI (as on Linux and macOS ARM64), SiraUtil, BSML, SongCore and BS Utils load, and their
+  Harmony patches apply without errors.
+- Doorstop worked on the first ARM64 build: it hooked Mono and invoked `IPA.Injector`. But the
+  injector returned immediately, because `AntiPiracy.IsInvalid` counted our 552 KB `steam_api64.dll`
+  and 2.1 MB `lsteamclient_a64.dll` as a Steam emulator (any file named "steam" of 350 KB or more).
+- Doorstop's `LOG` macro uses MSVC's `__VA_ARGS__` comma elision. For a debug build with clang, use
+  `##__VA_ARGS__`, and pass a byte-count pointer to `WriteFile`.
+- SiraUtil's `DisableOpenXRRecentering` restarts the XR loader when the runtime is SteamVR. In 2 of
+  3 ARM64 runs, SteamVR's standby toggled during the restart, and Unity then never recreated its
+  eye textures. The headset showed a black window, and the session stayed `SYNCHRONIZED`/`VISIBLE`
+  without frames. Runs where the headset was worn were fine, and so was an x64 run.
+
 ## Other Frame notes (x64 path, BSManager)
 
 - Valve's implicit `XR_APILAYER_VALVE_fdm_injection` / `VK_LAYER_VALVE_fdm_injection` spins forever
@@ -104,6 +121,8 @@ In the game, app CPU time per frame went from 7.8–8.8 ms to 3.3 ms (see the RE
   would need Unity's Burst compiler run for the game's assemblies; not attempted.
 - **Wine's ARM64 C++ EH bug.** Report it upstream with a minimal repro. Once fixed, the Microsoft
   runtime isn't needed any more.
-- **Mods.** BSIPA and Harmony/MonoMod on ARM64 Mono: MonoMod's detours need ARM64 support in the
-  version the mods use. Untested.
+- **MonoMod upstream.** Send the Windows ARM64 default-ABI fix to MonoMod. Until then, the installer
+  swaps in a rebuilt `MonoMod.Core.dll`.
+- **SiraUtil XR restart vs. standby.** Look into why Unity doesn't recreate the eye textures when
+  the headset goes into standby during SiraUtil's XR restart.
 - **LIV.** No ARM64 `LIV_Bridge.dll`; LIV's SDK would have to provide one.

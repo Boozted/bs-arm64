@@ -14,6 +14,8 @@ source except what the build downloads from upstream.
 | `src/monoposixhelper/glib.h`, `config.h` | original shim | MIT |
 | `patches/openxr-loader/*` | changes to the Khronos OpenXR-SDK | Apache-2.0 (upstream) |
 | `patches/dxvk/*` | changes to DXVK | zlib (upstream) |
+| `patches/monomod/*` | changes to MonoMod | MIT (upstream) |
+| `src/doorstop/*` | build glue + stub generator for BSIPA's Doorstop | MIT (Doorstop itself: CC0) |
 
 The Steamworks SDK headers aren't copied into this repo. The build reads them from Proton's public
 repository, which carries them in `lsteamclient/steamworks_sdk_*`. `sdk_inline_impl.inc` and
@@ -28,6 +30,8 @@ repository, which carries them in `lsteamclient/steamworks_sdk_*`. `sdk_inline_i
 | `dxgi.dll`, `d3d11.dll` | DXVK | zlib |
 | `MonoPosixHelper.dll` | Mono `zlib-helper.c` (MIT) + zlib (zlib) | MIT + zlib |
 | `steam_api64.dll` | this project | MIT |
+| `winhttp.dll` | BSIPA's Doorstop (CC0) + this project's glue | CC0 / MIT |
+| `MonoMod.Core.dll` | MonoMod | MIT |
 
 Anyone distributing the built binaries must follow those licenses. For the LGPL parts, that means
 offering the corresponding source; pointing to the pinned upstream tags plus this repo does that.

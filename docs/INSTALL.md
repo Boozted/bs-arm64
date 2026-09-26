@@ -39,7 +39,9 @@ In the instance (the originals go to `<instance>/.bs-arm64/backup/`, and added f
 | `dxgi.dll`, `d3d11.dll` (new) | built (DXVK aarch64) |
 | `vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll` (new) | Microsoft ARM64 runtime |
 | `openxr_loader.dll` (new, next to the exe) | built |
-| `Beat Saber_Data/Plugins/ARM64/` (new) | `steam_api64.dll`, `lsteamclient_a64.dll`, `UnityOpenXR.dll` (patched), `openxr_loader.dll` |
+| `Beat Saber_Data/Plugins/ARM64/` (new) | `steam_api64.dll`, `UnityOpenXR.dll` (patched), `openxr_loader.dll` |
+| `winhttp.dll` (only if BSIPA is installed) | ARM64 Doorstop |
+| `Libs/MonoMod.Core.dll` (only if BSIPA 4.3.7's MonoMod.Core 1.3.3 is installed) | patched MonoMod.Core |
 
 The game data and `Managed/*.dll` are not touched. The x64 plugins stay in `Plugins/x86_64/`, where the
 ARM64 player ignores them.
@@ -56,12 +58,24 @@ In the prefix:
 
 x64 games in the same prefix are unaffected: they ignore the ARM64 value and directory.
 
+## Mods
+
+Install BSIPA and mods as usual. BSManager works: its IPA run uses the x86 copy of `IPA.exe`.
+Then run `install/bs-arm64.sh install <instance>` **again**, because `IPA.exe` puts its x64
+`winhttp.dll` back. The installer replaces BSIPA's `winhttp.dll` and `Libs/MonoMod.Core.dll`, and
+keeps backups. Mods that ship their own native x64 DLLs won't load their native parts.
+
+Known issue: SiraUtil restarts the XR session at startup. If the headset goes into standby at that
+moment (for example, it isn't being worn), Unity sometimes doesn't recreate its eye textures, and the
+headset only shows a black window. Keep the headset on while the game starts, or restart the game.
+
 ## Launching
 
 `launch` runs `proton run "Beat Saber.exe"` with the usual Steam and Proton variables plus:
 
 - `WINEDLLPATH=<prefix>/pfx/drive_c/bs-arm64`
 - `DISABLE_VULKAN_FDM_INJECTION_LAYER=1`
+- `WINEDLLOVERRIDES=winhttp=n,b`: BSIPA's Doorstop, if present
 - `DISPLAY=:0` and `XDG_RUNTIME_DIR`, only if unset (e.g. started over SSH). Without a display, the
   player hangs silently right after start.
 
@@ -78,6 +92,9 @@ SteamVR must be running, which it always is in the Frame's game mode. SteamVR re
 | `xrCreateSession: XR_ERROR_VALIDATION_FAILURE` | WineD3D in use instead of DXVK: `dxgi.dll`/`d3d11.dll` not next to the exe, or `PROTON_USE_WINED3D` set |
 | crash in `unityopenxr` / `ucrtbase` on recenter | Microsoft VC++ runtime missing next to the exe |
 | back to menu with "Could not load readonly beatmap level data" | x64 `MonoPosixHelper.dll` still in place |
+| BSIPA log: `Invalid installation; please buy the game` / no `Logs/` folder | a file named `*steam*` of 350 KB or more in the game folder or `Beat Saber_Data/Plugins` (BSIPA anti-piracy) |
+| BSIPA log: `doesn't provide a default ABI` | x64/original `Libs/MonoMod.Core.dll`; run `install` again |
+| black window in the headset with mods | see *Known issue* under Mods |
 | game process idles at 0 % CPU, no `Player.log` | no X display; set `DISPLAY` (launch defaults to `:0`) |
 | `launch` refuses: "Proton changed" | rebuild for the new Proton and reinstall (see BUILD.md) |
 
