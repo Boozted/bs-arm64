@@ -198,12 +198,21 @@ EOF
     PATH="$PROTON/files/bin-arm64:$PATH" WINEPREFIX=$pfx "$PROTON/files/bin-arm64/wineserver" -w
 }
 
+# "1.44.1": from the build string in globalgamemanagers ("1.44.1_20239", as BSManager reads it).
+# BeatSaberVersion.txt only exists after the game or BSIPA ran once.
+game_version() {
+    local v
+    v=$( (grep -a -o '[0-9]\+\.[0-9]\+\.[0-9]\+_[0-9]\+' "$1/Beat Saber_Data/globalgamemanagers" || true) | head -n1)
+    [ -n "$v" ] || v=$(cat "$1/BeatSaberVersion.txt" 2>/dev/null || true)
+    echo "${v%%_*}" | grep . || echo unknown
+}
+
 cmd_install() {
     INSTANCE=${POSITIONAL[0]:-}
     [ -n "$INSTANCE" ] && [ -f "$INSTANCE/Beat Saber_Data/globalgamemanagers" ] || die "usage: install <Beat Saber instance dir>"
     INSTANCE=$(cd "$INSTANCE" && pwd)
     local version
-    version=$(cut -d_ -f1 "$INSTANCE/BeatSaberVersion.txt" 2>/dev/null || echo unknown)
+    version=$(game_version "$INSTANCE")
     [ "$version" = "$SUPPORTED_GAME_VERSION" ] || die "instance is Beat Saber $version; only $SUPPORTED_GAME_VERSION (Unity $UNITY_VERSION) is supported"
     # lsteamclient_a64/wineopenxr_a64 talk to this Proton's unix libraries: the build must match.
     case $(proton_version) in
