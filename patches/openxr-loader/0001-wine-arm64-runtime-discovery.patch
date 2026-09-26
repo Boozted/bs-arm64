@@ -1,0 +1,71 @@
+diff --git a/src/common/platform_utils.hpp b/src/common/platform_utils.hpp
+index 9715fc0..5099822 100644
+--- a/src/common/platform_utils.hpp
++++ b/src/common/platform_utils.hpp
+@@ -25,7 +25,7 @@
+ #endif
+ 
+ // OpenXR Loader environment variables of interest
+-#define OPENXR_RUNTIME_JSON_ENV_VAR "XR_RUNTIME_JSON"
++#define OPENXR_RUNTIME_JSON_ENV_VAR "XR_RUNTIME_JSON_ARM64"
+ #define OPENXR_API_LAYER_PATH_ENV_VAR "XR_API_LAYER_PATH"
+ 
+ // This is a CMake generated file with #defines for any functions/includes
+@@ -314,7 +314,8 @@ static inline std::string PlatformUtilsGetSecureEnv(const char* name) {
+     // Do not allow high integrity processes to act on data that can be controlled by medium integrity processes.
+     // Specifically, medium integrity processes can set environment variables which could then
+     // be read by high integrity processes.
+-    if (IsHighIntegrityLevel()) {
++    // Wine: every process looks elevated. Always honor the ARM64 runtime override.
++    if (strcmp(name, OPENXR_RUNTIME_JSON_ENV_VAR) != 0 && IsHighIntegrityLevel()) {
+         if (!envValue.empty()) {
+             LogPlatformUtilsError(std::string("!!! WARNING !!! Environment variable ") + name +
+                                   " is being ignored due to running from an elevated context. The value '" + envValue +
+diff --git a/src/loader/CMakeLists.txt b/src/loader/CMakeLists.txt
+index 31f62f8..91bda48 100644
+--- a/src/loader/CMakeLists.txt
++++ b/src/loader/CMakeLists.txt
+@@ -358,6 +358,16 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
+             openxr_loader
+             PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/openxr-loader.expsym"
+         )
++    elseif(WIN32)
++        # MinGW (e.g. llvm-mingw for Windows ARM64): export through the .def file,
++        # link the C++ runtime statically and keep the MSVC file name.
++        target_sources(
++            openxr_loader
++            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/openxr-loader.def"
++        )
++        set_target_properties(
++            openxr_loader PROPERTIES LINK_FLAGS "-static" PREFIX ""
++        )
+     else()
+         set_target_properties(
+             openxr_loader
+diff --git a/src/loader/api_layer_interface.cpp b/src/loader/api_layer_interface.cpp
+index 0ca99a5..be7c410 100644
+--- a/src/loader/api_layer_interface.cpp
++++ b/src/loader/api_layer_interface.cpp
+@@ -22,6 +22,7 @@
+ #include <memory>
+ #include <sstream>
+ #include <string>
++#include <iterator>
+ #include <utility>
+ #include <vector>
+ 
+diff --git a/src/loader/manifest_file.cpp b/src/loader/manifest_file.cpp
+index 83b4688..928c2c5 100644
+--- a/src/loader/manifest_file.cpp
++++ b/src/loader/manifest_file.cpp
+@@ -657,7 +657,9 @@ XrResult RuntimeManifestFile::FindManifestFiles(const std::string &openxr_comman
+     } else {
+ #ifdef XR_OS_WINDOWS
+         std::vector<std::string> filenames;
+-        ReadRuntimeDataFilesInRegistry("", "ActiveRuntime", filenames);
++        // Wine ARM64: prefer a runtime registered for pure ARM64 processes.
++        ReadRuntimeDataFilesInRegistry("", "ActiveRuntimeARM64", filenames);
++        if (filenames.empty()) ReadRuntimeDataFilesInRegistry("", "ActiveRuntime", filenames);
+         if (filenames.size() == 0) {
+             LoaderLogger::LogErrorMessage(
+                 openxr_command, "RuntimeManifestFile::FindManifestFiles - failed to find active runtime file in registry");

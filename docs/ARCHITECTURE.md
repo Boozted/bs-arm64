@@ -1,0 +1,204 @@
+# Architecture
+
+## Starting point
+
+Beat Saber 1.44.1 is a Unity 6000.0.40f1 game, built with the Mono scripting backend for Windows x64.
+The Steam Frame runs it through Proton 11.0 (ARM64), in these steps:
+
+1. Wine's own code (ntdll, kernel32, …) is ARM64/ARM64X.
+2. The game's x64 code (`UnityPlayer.dll`, Mono's JIT output, every native plugin) runs through
+   **FEX** as ARM64EC.
+3. Proton's game-facing modules (DXVK, lsteamclient, wineopenxr) are **ARM64EC** builds, so an x64
+   process can load them.
+
+A perf profile of gameplay showed that the main thread spends 83–87% of its time in
+FEX-translated code (`[anon:FEXMemJIT]`). The game is CPU-bound, and rendering resolution barely matters.
+
+Unity ships a Windows ARM64 player for the same engine version (module "Windows Build Support (Mono)",
+variation `win_arm64_player_nondevelopment_mono`). Game code is IL in `Managed/*.dll` and game data is
+engine-version specific but architecture independent. So swapping the player binaries gives a native
+ARM64 process that runs the unmodified game data and assemblies.
+
+A pure ARM64 process can't load x64 or ARM64EC code. Every native module the game touches needs a
+pure ARM64 version, and that is what this project provides.
+
+```
+Beat Saber.exe (Unity ARM64 WindowsPlayer.exe)
+├─ UnityPlayer.dll (ARM64) ── Mono (mono-2.0-bdwgc.dll ARM64) ── game IL (unchanged)
+│    └─ MonoPosixHelper.dll ............ gzip for System.IO.Compression [built here]
+├─ d3d11.dll / dxgi.dll ................ DXVK aarch64 [built here] ── winevulkan (Wine, ARM64X)
+├─ Plugins/ARM64/steam_api64.dll ....... Steamworks flat API [written here]
+│    └─ lsteamclient_a64.dll ........... Proton lsteamclient PE half, aarch64 [built here]
+│         └─ lsteamclient.so ........... Proton's unix half (stock) ── Linux steamclient.so
+├─ Plugins/ARM64/UnityOpenXR.dll ....... Unity UWP ARM64 build, imports patched [patched here]
+│    └─ openxr_loader.dll .............. Khronos loader, patched [built here]
+│         └─ wineopenxr_a64.dll ........ Proton wineopenxr PE half, aarch64 [built here]
+│              └─ wineopenxr.so ........ Proton's unix half (stock) ── SteamVR OpenXR
+└─ vcruntime140/msvcp140 ............... Microsoft ARM64 runtime (downloaded)
+```
+
+## Components
+
+### Unity ARM64 player
+
+Source: `UnitySetup-Windows-Mono-Support-for-Editor-6000.0.40f1.pkg`, from Unity's CDN (the macOS
+target-support package; it contains every Windows player variation).
+[`tools/unity_pkg_extract.py`](../tools/unity_pkg_extract.py) streams the xar → gzip → cpio chain
+and keeps only four files:
+
+- `WindowsPlayer.exe` → `Beat Saber.exe`
+- `UnityPlayer.dll`
+- `UnityCrashHandler64.exe`
+- `MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll`
+
+The ARM64 player looks up native plugins in `Beat Saber_Data/Plugins/ARM64/`, not `Plugins/x86_64/`.
+
+### Steam: `steam_api64.dll` + `lsteamclient_a64.dll`
+
+Valve ships no Windows ARM64 `steam_api64.dll`. Proton's `lsteamclient.dll`, which is what
+`steam_api` normally loads as `steamclient64.dll`, is ARM64EC only.
+
+**lsteamclient_a64.dll.** Proton's lsteamclient is split in two halves:
+
+- A Windows half: thunks that marshal every interface call into a parameter struct.
+- A unix half, `lsteamclient.so`, which calls the native Linux `steamclient.so`.
+
+The two halves talk through Wine's unix-call interface (`__wine_unix_call`). The Windows half is plain C
+and already handles `__aarch64__`, so we build it from the Proton tag matching the installed
+Proton. The compiler is llvm-mingw's `aarch64-w64-mingw32-clang`, using Wine's headers and a tiny
+`winecrt0` shim. The unix half is reused as is.
+
+Callbacks are polled (`steamclient_next_callback`), so no unix→PE calls are needed.
+
+We name it `lsteamclient_a64` so Wine can't pick Proton's ARM64EC `lsteamclient.dll`, which comes
+first in Wine's DLL search path. Its unix half is a symlink, `lsteamclient_a64.so` → Proton's
+`lsteamclient.so`. Wine only loads a unix half for DLLs it treats as *builtin*, so we:
+
+- stamp the "Wine builtin DLL" marker into the DOS header,
+- put the DLL in `$WINEDLLPATH/aarch64-windows/` and the symlink in `$WINEDLLPATH/aarch64-unix/`,
+- ship a second copy next to `steam_api64.dll`.
+
+The copy next to `steam_api64.dll` is needed because Wine only resolves builtins through
+`WINEDLLPATH` after it finds a builtin-marked file on the normal search path.
+
+**steam_api64.dll.** This is a new implementation of the Steamworks SDK 1.61 flat API. It
+exports all 1,089 symbols of the real DLL.
+
+- **Interface wrappers.** [`gen.py`](../src/steam-api/gen.py) generates 946 `SteamAPI_ISteamX_Method`
+  wrappers from `steam_api_flat.h`. Each one calls into the interface's vtable. Vtable indices come
+  from lsteamclient's own vtable definitions for the interface versions of SDK 1.61. Overloads are
+  resolved through `STEAM_FLAT_NAME` and MSVC's reversed overload order. All 879 indices that can be
+  checked match the offsets disassembled from the real x64 `steam_api64.dll`.
+- **Struct returns.** Methods that return a struct (`CSteamID`, `SteamIPAddress_t`, …) take a hidden
+  `_ret` pointer after `this` in lsteamclient. The generator detects them and wraps them.
+- **Core** ([`steam_api_core.cpp`](../src/steam-api/steam_api_core.cpp)):
+  - init: `SteamInternal_SteamAPI_Init` → `CreateInterface("SteamClient021")` → pipe → global user →
+    interface version check
+  - `SteamInternal_ContextInit`, `FindOrCreateUserInterface`
+  - manual dispatch, mapped to lsteamclient's `Steam_BGetCallback`, `Steam_FreeLastCallback` and
+    `Steam_GetAPICallResult`
+  - the legacy `CCallback`/`CCallResult` dispatch, using the MSVC vtable layout
+  - shutdown
+  - game-server entry points, which are stubbed
+- **Helpers** ([`steam_api_helpers.cpp`](../src/steam-api/steam_api_helpers.cpp)):
+  - the flat accessors (`SteamAPI_SteamUser_v023`, …)
+  - `SteamNetworkingIPAddr`/`Identity`/`servernetadr_t` helpers
+  - `ISteamNetworkingUtils` inline convenience methods
+- **ABI rule.** This DLL is compiled with the Itanium C++ ABI (mingw). It never makes a C++ virtual call.
+  All calls into Steam objects go through typed function pointers taken from the MSVC-layout
+  vtables.
+
+Env var `STEAMAPI_ARM64_LOG=1` logs init to stderr.
+
+### OpenXR
+
+**UnityOpenXR.dll.** The Unity OpenXR package (1.14.3, the version the game ships, byte-identical)
+contains an ARM64 build only for UWP. [`patch_unityopenxr.py`](../src/unityopenxr/patch_unityopenxr.py)
+rewrites three imports so it loads in a desktop process:
+
+- `MSVCP140_APP` → `msvcp140`
+- `VCRUNTIME140_APP` → `vcruntime140`
+- `api-ms-win-core-libraryloader-l2-1-0!LoadPackagedLibrary` → `kernel32!LoadLibraryW`. Wine's
+  `LoadPackagedLibrary` is a stub. The extra `reserved` argument is harmless under the ARM64
+  calling convention.
+
+The UWP build loads `openxr_loader.dll` by bare name, so a copy must sit next to the exe.
+
+**openxr_loader.dll.** Khronos publishes no desktop ARM64 loader, so we build 1.1.45 (the game's
+version) with llvm-mingw. [Patches](../patches/openxr-loader/0001-wine-arm64-runtime-discovery.patch):
+
+- **Registry lookup.** The loader reads `HKLM\Software\Khronos\OpenXR\1\ActiveRuntimeARM64` before
+  `ActiveRuntime`. Proton's `ActiveRuntime` points at the ARM64EC wineopenxr, and Proton rewrites that
+  value on every launch.
+- **Env override.** The override variable is named `XR_RUNTIME_JSON_ARM64` and isn't dropped for
+  "elevated" processes. Every Wine process looks elevated to the loader.
+- **MinGW build fixes.** CMake gets the MinGW export fix (`.def` file, static runtime, no `lib`
+  prefix) and a missing `<iterator>` include.
+
+**wineopenxr_a64.dll.** This is Proton's wineopenxr Windows half built for pure aarch64, the same way
+as lsteamclient. It imports `winevulkan` (ARM64X in Proton) and `dxgi`. Its unix half is a symlink to
+Proton's `wineopenxr.so`.
+
+The runtime JSON (`C:\bs-arm64\wineopenxr_a64.json`) points at the DLL by path. The builtin marker
+makes Wine resolve it through `WINEDLLPATH` by name, so the name must not be `wineopenxr.dll`.
+
+Building wineopenxr needs Wine's IDL-generated headers (`d3d11.h`, …) and `wine/vulkan.h`. Those come
+from Wine's own `widl` and `make_vulkan`, run on the pinned Wine commit.
+
+### Graphics: DXVK
+
+Proton's DXVK in `lib/wine/dxvk/aarch64-windows` is ARM64EC, and Wine's own `d3d11`/`dxgi` (WineD3D)
+are ARM64X. WineD3D can boot the game, but it has no DXVK interop, and wineopenxr needs that interop to
+share D3D11 textures with Vulkan. `xrCreateSession` then fails with `XR_ERROR_VALIDATION_FAILURE`.
+
+We build DXVK at Proton's commit for aarch64 (DXVK's `DXVK_ARCH_ARM64` code path; x86 intrinsics are
+guarded). Only two missing-include fixes for libc++ are needed. `dxgi.dll` and `d3d11.dll` go next to
+the exe. The app directory wins over the ARM64EC DXVK that Proton copies into `system32`.
+
+### MonoPosixHelper.dll
+
+Beat Saber stores beatmaps gzip-compressed and reads them with `System.IO.Compression.GZipStream`.
+Unity's Mono implements that via P/Invoke into `MonoPosixHelper.dll` (`CreateZStream`, …). Unity's
+ARM64 player doesn't ship one, and the leftover x64 one can't load. The failure is swallowed:
+`ReadAllTextFromData` returns null, and the game reports "Could not load readonly beatmap level data"
+and returns to the menu.
+
+We build Mono's `support/zlib-helper.c` (Unity's fork) with zlib 1.3.1 and a minimal glib shim
+([src/monoposixhelper](../src/monoposixhelper)).
+
+### Microsoft VC++ runtime
+
+`UnityOpenXR` throws and catches a C++ exception when the tracking origin changes (recenter, headset
+put on). Wine's ARM64 `__CxxFrameHandler3` (in ucrtbase) dereferences NULL on this MSVC-compiled
+code, and the game crashes.
+
+Microsoft's own ARM64 `vcruntime140.dll`/`msvcp140.dll`/`vcruntime140_1.dll`, placed next to the exe,
+fix it. They're taken from `vc_redist.arm64.exe` by
+[`tools/vcredist_extract.py`](../tools/vcredist_extract.py), which carves the cabinets and unpacks
+them with bsdtar.
+
+Fixing Wine's ARM64 C++ EH would remove this dependency (see FINDINGS).
+
+## Wine prefix and launch environment
+
+The installer ([install/bs-arm64.sh](../install/bs-arm64.sh)) adds these to the prefix:
+
+- `pfx/drive_c/bs-arm64/` (`C:\bs-arm64`), used as `WINEDLLPATH`:
+  - `aarch64-windows/lsteamclient_a64.dll`, `aarch64-windows/wineopenxr_a64.dll`
+  - `aarch64-unix/lsteamclient_a64.so`, `aarch64-unix/wineopenxr_a64.so`: symlinks into Proton
+  - `wineopenxr_a64.json`
+  - `proton-version`: the Proton build the halves must match
+- registry: `HKLM\Software\Khronos\OpenXR\1` `ActiveRuntimeARM64` = `C:\bs-arm64\wineopenxr_a64.json`
+
+The launch environment adds only `WINEDLLPATH=<prefix>/pfx/drive_c/bs-arm64` and
+`DISABLE_VULKAN_FDM_INJECTION_LAYER=1` to the usual Proton and Steam variables.
+`DISABLE_VULKAN_FDM_INJECTION_LAYER=1` works around Valve's `fdm_injection` layer spinning forever in
+`vkCreateDevice`; the x64 build needs it too.
+
+The loader's `XR_RUNTIME_JSON_ARM64` override did not take effect in our tests, even though other
+variables such as `DXVK_LOG_LEVEL` reach the game. The cause hasn't been investigated, so the
+registry value is what's actually used.
+
+The Windows halves of lsteamclient and wineopenxr must match Proton's unix halves exactly: the
+parameter structs and call numbers are generated per Proton version. `launch` refuses to start if
+Proton was updated after install. Rebuild from the new Proton tag and reinstall.
