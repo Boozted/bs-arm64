@@ -6,8 +6,8 @@ All notable changes to bs-arm64. Each release is built for one Proton build (see
 
 ### Added
 - Eye-tracked foveated rendering: the sharp area follows your eyes using SteamVR's eye tracking.
-  In BSManager, turn on **Foveated Rendering** in Beat Saber's Properties in Steam; with a manual
-  install, start the game with `BS_ARM64_FDM=1`. A new OpenXR layer (`XrApiLayer_bs_arm64_gaze.dll`,
+  Turn it on in Steam (Beat Saber → ⚙ → Properties → General → Foveated Rendering); BSManager reads
+  that switch when it starts the game. With a manual install, start the game with `BS_ARM64_FDM=1`. A new OpenXR layer (`XrApiLayer_bs_arm64_gaze.dll`,
   registered by the installer, loaded only when foveated rendering is on) reads the gaze, and DXVK
   gives each eye its own density map around it. Without eye tracking the fixed profile applies.
   GPU time 4.2 → 3.6 ms per frame and system power 15.6 → 14.3 W compared to the fixed profile
