@@ -213,6 +213,22 @@ setup_prefix() {
    }
 }
 EOF
+    # Eye-tracked foveation: an implicit OpenXR layer that only loads when BS_ARM64_FDM is set
+    cp "$ARTIFACTS/XrApiLayer_bs_arm64_gaze.dll" "$rt/"
+    cat > "$rt/XrApiLayer_bs_arm64_gaze.json" <<'EOF'
+{
+   "file_format_version": "1.0.0",
+   "api_layer": {
+      "name": "XR_APILAYER_bs_arm64_gaze",
+      "library_path": "C:\\bs-arm64\\XrApiLayer_bs_arm64_gaze.dll",
+      "api_version": "1.1",
+      "implementation_version": "1",
+      "description": "Eye-tracked foveation centers for DXVK (bs-arm64)",
+      "enable_environment": "BS_ARM64_FDM",
+      "disable_environment": "BS_ARM64_NO_GAZE"
+   }
+}
+EOF
     proton_version > "$rt/proton-version"
 
     # Our openxr_loader.dll prefers ActiveRuntimeARM64 over Proton's ActiveRuntime
@@ -223,6 +239,10 @@ EOF
         timeout 180 "$PROTON/files/bin-arm64/wine" reg add 'HKLM\Software\Khronos\OpenXR\1' \
         /v ActiveRuntimeARM64 /t REG_SZ /d 'C:\bs-arm64\wineopenxr_a64.json' /f >/dev/null ||
         die "setting the OpenXR runtime in the Wine prefix failed or timed out"
+    PATH="$PROTON/files/bin-arm64:$PATH" WINEPREFIX=$pfx WINEDEBUG=-all \
+        timeout 180 "$PROTON/files/bin-arm64/wine" reg add 'HKLM\Software\Khronos\OpenXR\1\ApiLayers\Implicit' \
+        /v 'C:\bs-arm64\XrApiLayer_bs_arm64_gaze.json' /t REG_DWORD /d 0 /f >/dev/null ||
+        die "registering the OpenXR layer in the Wine prefix failed or timed out"
     PATH="$PROTON/files/bin-arm64:$PATH" WINEPREFIX=$pfx \
         timeout 60 "$PROTON/files/bin-arm64/wineserver" -w ||
         die "Wine in $pfx did not shut down; restart the device and try again"
@@ -250,7 +270,7 @@ cmd_install() {
         *) die "Proton is $(proton_version), but these DLLs were built for $PROTON_TAG; rebuild them (docs/BUILD.md)" ;;
     esac
     for f in lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll MonoPosixHelper.dll \
-             LIV_Bridge.dll; do
+             LIV_Bridge.dll XrApiLayer_bs_arm64_gaze.dll; do
         [ -f "$ARTIFACTS/$f" ] || die "$ARTIFACTS/$f missing; run build.sh first (or pass --artifacts)"
     done
     require_prefix_idle

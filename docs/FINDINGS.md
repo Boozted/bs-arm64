@@ -113,6 +113,9 @@ Measured with BeatLeader replays (Monday Not Sick Anymore and STARLIGHT, Expert+
   4.2–4.3 ms, GPU rail 2.97 → 2.40–2.44 W, system power 16.7 → 15.4–15.6 W (two runs). Without MSAA,
   foveation saved less (4.7 → 4.5 ms). SteamVR's own foveation (`XR_FB_foveation`) would need the eye
   images created through OpenXR; Valve's `fdm_injection` layer targets Android and doesn't apply.
+- **Eye-tracked foveated rendering** (sharp radius 0.15 around SteamVR's foveation centers, per-eye
+  maps): GPU time 3.67/3.62 ms vs 4.18 ms fixed, GPU rail 1.83 vs 2.49 W, system power 14.3 vs 15.6 W,
+  in alternating runs with the headset off (static gaze). App CPU and frame pacing unchanged.
 - **GC** didn't cause hitches: the managed heap grew from 318 to 361 MB during the song and was
   never collected.
 - The remaining hitches (13–18 ms, 13–25 per song) show the main thread busy in game and mod code.

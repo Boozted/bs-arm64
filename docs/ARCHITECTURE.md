@@ -33,6 +33,7 @@ Beat Saber.exe (Unity ARM64 WindowsPlayer.exe)
 ├─ Plugins/ARM64/LIV_Bridge.dll ........ stub: no LIV capture [written here]
 ├─ Plugins/ARM64/UnityOpenXR.dll ....... Unity UWP ARM64 build, imports patched [patched here]
 │    └─ openxr_loader.dll .............. Khronos loader, patched [built here]
+│         ├─ XrApiLayer_bs_arm64_gaze.dll  eye-tracked foveation centers for DXVK [written here]
 │         └─ wineopenxr_a64.dll ........ Proton wineopenxr PE half, aarch64 [built here]
 │              └─ wineopenxr.so ........ Proton's unix half (stock) ── SteamVR OpenXR
 └─ vcruntime140/msvcp140 ............... Microsoft ARM64 runtime (downloaded)
@@ -204,6 +205,65 @@ Turnip-specific details:
 A stronger profile, checked in the headset: `BS_ARM64_FDM_INNER=0.20 BS_ARM64_FDM_OUTER_R=0.35`.
 The defaults are hard to notice.
 
+**Eye tracking**
+([patches/dxvk/0006-eye-tracked-foveation.patch](../patches/dxvk/0006-eye-tracked-foveation.patch),
+[src/gaze-layer](../src/gaze-layer/gaze_layer.c)). The rings follow the eyes when SteamVR has eye
+tracking. DXVK can't query OpenXR itself, so a small implicit OpenXR API layer,
+`XrApiLayer_bs_arm64_gaze.dll`, does it in the game process:
+- It adds `XR_META_foveation_eye_tracked` to the game's instance, together with the
+  `XR_FB_foveation` and `XR_FB_swapchain_update_state` extensions that it requires.
+- It calls `xrGetFoveationEyeTrackedStateMETA` every time the game calls `xrLocateViews`, once per
+  frame right before rendering.
+- It exports the latest centers as `bs_arm64_gaze()`.
+
+These are SteamVR's own foveation centers per eye, in each eye's NDC, so they already account for the
+Frame's asymmetric per-eye fields of view. Its manifest has `enable_environment: BS_ARM64_FDM`, so the
+layer only loads when foveation is on. `BS_ARM64_NO_GAZE=1` keeps it out, and
+`BS_ARM64_GAZE_LOG=<Windows path>` logs what it gets every 2 s.
+
+DXVK then:
+- enables `VK_VALVE_fragment_density_map_layered`, so each eye gets its own map layer;
+- keeps a ring of four maps and rewrites the next one whenever a center moves by a quarter texel
+  (Turnip reads a map while recording, so a map must stay unchanged until earlier command buffers
+  are recorded);
+- uses the fixed profile if no fresh centers (300 ms) arrive.
+
+Without the layered extension, one map covers both eyes' centers. Per-eye maps cost nothing measurable:
+with the fixed profile, alternating runs gave 4.24/4.30 ms GPU per frame with per-eye maps and 4.18/4.22 ms
+with a single map, at the same power.
+
+What we found about SteamVR's centers on the Frame:
+- Their y axis points down: looking up gives negative y.
+- Compared with where the wearer actually looked (checked with the debug crosshair), they are
+  rotated by about 9° clockwise and shifted slightly to the right, in both eyes alike.
+- DXVK corrects that by default. It rotates the midpoint of both eyes' centers, then moves both
+  eyes by the same amount, so the difference between the eyes stays intact (rotating each eye on
+  its own made the two crosshairs split).
+- The correction was tuned on one Frame and one wearer. It isn't known yet whether it's the same
+  for everyone.
+- Near the left edge a small error remains. It's well inside the full-density radius.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BS_ARM64_FDM_GAZE_INNER` | 0.15 | radius of full density around the gaze |
+| `BS_ARM64_FDM_GAZE_OUTER_R` | 0.30 | radius where the ring ends |
+| `BS_ARM64_FDM_GAZE_ROTATION` | −9 | correction rotation in degrees (positive = clockwise) |
+| `BS_ARM64_FDM_GAZE_OFFSET_X`, `_Y` | −0.05, 0 | correction offset in NDC |
+| `BS_ARM64_FDM_GAZE_FLIP_Y` | – | `1` flips the vertical axis of the centers |
+| `BS_ARM64_FDM_LAYERED` | – | `0`: one map for both eyes instead of one per eye |
+| `BS_ARM64_FDM_GAZE_CROSSHAIR` | – | `1` draws a green crosshair at each eye's center (debugging) |
+| `BS_ARM64_FDM_GAZE_TUNE` | – | Windows path of a file with `offset_x offset_y rotation`, re-read about every 0.5 s: calibrate while watching the crosshair |
+
+`BS_ARM64_FDM_MID` and `BS_ARM64_FDM_OUTER` apply to both profiles.
+
+The crosshair is cleared into the resolved eye image in a separate pass after the eye pass. Clears
+inside the FDM pass came out scaled per tile: extra crosshairs appeared, and the right eye's layer
+often had none.
+
+BSManager sets `BS_ARM64_FDM=1` when **Foveated Rendering** is on in Beat Saber's properties in Steam
+(stored as `apps/620980/FDMEnable` in the user's `localconfig.vdf`). In a Steam launch that switch
+enables Valve's `fdm_injection` layer, which this build can't use (see below).
+
 ### MonoPosixHelper.dll
 
 Beat Saber stores beatmaps gzip-compressed and reads them with `System.IO.Compression.GZipStream`.
@@ -285,8 +345,11 @@ The installer ([install/bs-arm64.sh](../install/bs-arm64.sh)) adds these to the 
   - `aarch64-windows/lsteamclient_a64.dll`, `aarch64-windows/wineopenxr_a64.dll`
   - `aarch64-unix/lsteamclient_a64.so`, `aarch64-unix/wineopenxr_a64.so`: symlinks into Proton
   - `wineopenxr_a64.json`
+  - `XrApiLayer_bs_arm64_gaze.dll`, `XrApiLayer_bs_arm64_gaze.json`: the eye-tracking OpenXR layer
   - `proton-version`: the Proton build the halves must match
 - registry: `HKLM\Software\Khronos\OpenXR\1` `ActiveRuntimeARM64` = `C:\bs-arm64\wineopenxr_a64.json`
+- registry: `HKLM\Software\Khronos\OpenXR\1\ApiLayers\Implicit`
+  `C:\bs-arm64\XrApiLayer_bs_arm64_gaze.json` = 0
 
 The launch environment adds only `WINEDLLPATH=<prefix>/pfx/drive_c/bs-arm64` and
 `DISABLE_VULKAN_FDM_INJECTION_LAYER=1` to the usual Proton and Steam variables.

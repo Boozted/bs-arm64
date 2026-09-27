@@ -41,6 +41,22 @@ In the game's graphics settings, turn off **Screen Distortion**. For the effect,
 whole scene in the middle of every frame and keeps drawing on it, which costs a lot of GPU time on the
 Frame's tiled GPU. In v0.1.6 it also caused frozen ghost images of the menu and sabers.
 
+## Foveated rendering (optional)
+
+With foveated rendering the Frame's GPU renders the area you look at in full resolution and the edges
+at lower resolution. In BSManager, turn on **Foveated Rendering** in Beat Saber's **Properties** in
+Steam; with a manual install, start the game with `BS_ARM64_FDM=1`. With SteamVR's eye tracking the
+sharp area follows your eyes, otherwise it stays around the lens centers.
+
+| STARLIGHT replay, 2160, 120 Hz | GPU / frame | System power |
+|---|---|---|
+| off | 4.8 ms | 16.7 W |
+| fixed | 4.2 ms | 15.6 W |
+| eye-tracked | 3.6 ms | 14.3 W |
+
+Radius, densities and the gaze correction are set with `BS_ARM64_FDM_*` variables, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#graphics-dxvk).
+
 ## What works
 
 | Area | Status |
