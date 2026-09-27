@@ -169,6 +169,14 @@ resolves it inside the pass. DXVK then still stored the multisampled color and d
 150 MB per frame that nothing reads. The patch stores them as `DONT_CARE` when a multisampled pass has a
 resolve. `BS_ARM64_KEEP_MSAA=1` restores DXVK's behavior.
 
+With **Screen Distortion** on, Unity resolves the scene for the effect and then keeps drawing on the
+multisampled target, so a later pass loads what we discarded. That showed stale images (frozen
+menu, ghost sabers) in v0.1.6.
+[patches/dxvk/0005-keep-loaded-msaa-targets.patch](../patches/dxvk/0005-keep-loaded-msaa-targets.patch)
+remembers which targets were discarded. When a pass loads one of them, DXVK stores that target again
+from then on and logs `MSAA: … storing it from now on`. At most one frame shows stale contents.
+Without Screen Distortion nothing loads them, and the saving stays.
+
 Optional fixed foveated rendering
 ([patches/dxvk/0004-fixed-foveation.patch](../patches/dxvk/0004-fixed-foveation.patch)), off unless
 `BS_ARM64_FDM=1`. DXVK then enables `VK_EXT_fragment_density_map` and attaches one density map to every

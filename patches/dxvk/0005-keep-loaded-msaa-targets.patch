@@ -1,0 +1,111 @@
+diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
+index 92aed804d..49287f270 100644
+--- a/src/dxvk/dxvk_context.cpp
++++ b/src/dxvk/dxvk_context.cpp
+@@ -5669,6 +5669,9 @@ namespace dxvk {
+       if (colorTarget.view != nullptr) {
+         colorFormats[i] = colorTarget.view->info().format;
+ 
++        if (ops.colorOps[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD)
++          keepLoadedMultisampleTarget(*colorTarget.view->image());
++
+         colorInfo.imageView = colorTarget.view->handle();
+         colorInfo.imageLayout = colorTarget.view->getLayout();
+         colorInfo.loadOp = ops.colorOps[i].loadOp;
+@@ -5716,6 +5719,9 @@ namespace dxvk {
+ 
+     if (depthTarget.view) {
+       depthStencilFormat = depthTarget.view->info().format;
++
++      if (ops.depthOps.loadOpD == VK_ATTACHMENT_LOAD_OP_LOAD)
++        keepLoadedMultisampleTarget(*depthTarget.view->image());
+       depthStencilAspects = depthTarget.view->info().aspects;
+       depthStencilWritable = vk::getWritableAspectsForLayout(depthTarget.view->info().layout);
+ 
+@@ -5858,17 +5864,33 @@ namespace dxvk {
+     auto& rendering = m_state.om.renderingInfo.rendering;
+     bool resolved = false;
+ 
++    // Targets that a later pass loaded again keep their contents (see keepLoadedMultisampleTarget)
++    auto discard = [this] (const DxvkImage& image) {
++      auto entry = m_msaaDiscards.find(image.handle());
++
++      if (entry != m_msaaDiscards.end() && entry->second == MsaaDiscard::Keep)
++        return false;
++
++      m_msaaDiscards[image.handle()] = MsaaDiscard::Discarded;
++      return true;
++    };
++
+     for (uint32_t i = 0; i < rendering.colorAttachmentCount; i++) {
+       auto& color = m_state.om.renderingInfo.color[i];
++      const auto& target = m_state.om.framebufferInfo.getColorTarget(i);
+ 
+-      if (color.imageView && color.resolveMode != VK_RESOLVE_MODE_NONE) {
+-        color.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
++      if (color.imageView && color.resolveMode != VK_RESOLVE_MODE_NONE && target.view) {
+         resolved = true;
++
++        if (discard(*target.view->image()))
++          color.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+       }
+     }
+ 
+-    // The depth buffer of a resolved pass is only used within that pass
+-    if (resolved) {
++    // The depth buffer of a resolved pass is usually only used within that pass
++    const auto& depthTarget = m_state.om.framebufferInfo.getDepthTarget();
++
++    if (resolved && depthTarget.view && discard(*depthTarget.view->image())) {
+       if (rendering.pDepthAttachment)
+         m_state.om.renderingInfo.depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+       if (rendering.pStencilAttachment)
+@@ -5877,6 +5899,24 @@ namespace dxvk {
+   }
+ 
+ 
++  // A pass that loads a multisampled target we discarded would read stale memory. With Screen
++  // Distortion on, Unity keeps drawing on the scene after resolving it for the effect. Store that
++  // target from now on; at most one frame shows stale contents.
++  void DxvkContext::keepLoadedMultisampleTarget(const DxvkImage& image) {
++    if (image.info().sampleCount == VK_SAMPLE_COUNT_1_BIT)
++      return;
++
++    auto entry = m_msaaDiscards.find(image.handle());
++
++    if (entry == m_msaaDiscards.end() || entry->second != MsaaDiscard::Discarded)
++      return;
++
++    entry->second = MsaaDiscard::Keep;
++    Logger::info(str::format("MSAA: ", image.info().extent.width, "x", image.info().extent.height,
++      " target loaded after its store was discarded, storing it from now on"));
++  }
++
++
+   // bs-arm64 (BS_ARM64_FDM=1): fixed foveated rendering for the game's stereo eye pass, i.e. a square
+   // 2-layer render target of at least 1024 px. One fragment density map for both eyes: full density
+   // within BS_ARM64_FDM_INNER (0.30, fraction of the width) of BS_ARM64_FDM_CX/CY (0.5/0.59, the
+diff --git a/src/dxvk/dxvk_context.h b/src/dxvk/dxvk_context.h
+index 70f4f6f77..a5acd8c23 100644
+--- a/src/dxvk/dxvk_context.h
++++ b/src/dxvk/dxvk_context.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <unordered_map>
++
+ #include "dxvk_barrier.h"
+ #include "dxvk_bind_mask.h"
+ #include "dxvk_cmdlist.h"
+@@ -1672,6 +1674,11 @@ namespace dxvk {
+ 
+     void discardResolvedMultisampleTargets();
+ 
++    void keepLoadedMultisampleTarget(const DxvkImage& image);
++
++    enum class MsaaDiscard : uint8_t { Discarded, Keep };
++    std::unordered_map<VkImage, MsaaDiscard> m_msaaDiscards;
++
+     // bs-arm64: fixed foveated rendering (BS_ARM64_FDM=1)
+     Rc<DxvkImage> m_fdmImage;
+     VkImageView   m_fdmView = VK_NULL_HANDLE;

@@ -214,6 +214,8 @@ step_dxvk() {
         git -C "$src" apply "$ROOT/patches/dxvk/0003-discard-resolved-msaa.patch"
     git -C "$src" apply --check "$ROOT/patches/dxvk/0004-fixed-foveation.patch" 2>/dev/null &&
         git -C "$src" apply "$ROOT/patches/dxvk/0004-fixed-foveation.patch"
+    git -C "$src" apply --check "$ROOT/patches/dxvk/0005-keep-loaded-msaa-targets.patch" 2>/dev/null &&
+        git -C "$src" apply "$ROOT/patches/dxvk/0005-keep-loaded-msaa-targets.patch"
     cat > "$OBJ/dxvk-cross-aarch64.txt" <<EOF
 [binaries]
 c = '$CC'
