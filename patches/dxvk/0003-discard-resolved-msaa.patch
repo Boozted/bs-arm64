@@ -1,0 +1,64 @@
+diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
+index 187e1aeb4..dda81cdd8 100644
+--- a/src/dxvk/dxvk_context.cpp
++++ b/src/dxvk/dxvk_context.cpp
+@@ -5838,6 +5838,35 @@ namespace dxvk {
+   }
+   
+   
++  void DxvkContext::discardResolvedMultisampleTargets() {
++    // BS_ARM64_KEEP_MSAA=1 stores them as usual, for debugging
++    static const bool keep = env::getEnvVar("BS_ARM64_KEEP_MSAA") == "1";
++
++    if (keep || m_state.om.framebufferInfo.getSampleCount() == VK_SAMPLE_COUNT_1_BIT)
++      return;
++
++    auto& rendering = m_state.om.renderingInfo.rendering;
++    bool resolved = false;
++
++    for (uint32_t i = 0; i < rendering.colorAttachmentCount; i++) {
++      auto& color = m_state.om.renderingInfo.color[i];
++
++      if (color.imageView && color.resolveMode != VK_RESOLVE_MODE_NONE) {
++        color.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
++        resolved = true;
++      }
++    }
++
++    // The depth buffer of a resolved pass is only used within that pass
++    if (resolved) {
++      if (rendering.pDepthAttachment)
++        m_state.om.renderingInfo.depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
++      if (rendering.pStencilAttachment)
++        m_state.om.renderingInfo.stencil.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
++    }
++  }
++
++
+   void DxvkContext::renderPassUnbindFramebuffer() {
+     if (m_flags.test(DxvkContextFlag::GpRenderPassSecondaryCmd)) {
+       m_flags.clr(DxvkContextFlag::GpRenderPassSecondaryCmd);
+@@ -5852,6 +5881,10 @@ namespace dxvk {
+       // to set up the final load and store ops for the pass
+       finalizeLoadStoreOps();
+ 
++      // bs-arm64: Beat Saber never reads its multisampled targets after the
++      // in-pass resolve. Storing them costs a lot of bandwidth on a tiler.
++      discardResolvedMultisampleTargets();
++
+       auto& renderingInfo = m_state.om.renderingInfo.rendering;
+       m_cmd->cmdBeginRendering(DxvkCmdBuffer::ExecBuffer, &renderingInfo);
+       m_cmd->cmdExecuteCommands(1, &cmdBuffer);
+diff --git a/src/dxvk/dxvk_context.h b/src/dxvk/dxvk_context.h
+index c613765bb..4429bfbdd 100644
+--- a/src/dxvk/dxvk_context.h
++++ b/src/dxvk/dxvk_context.h
+@@ -1669,6 +1669,8 @@ namespace dxvk {
+             DxvkRenderPassOps&    ops);
+     
+     void renderPassUnbindFramebuffer();
++
++    void discardResolvedMultisampleTargets();
+     
+     void resetRenderPassOps(
+       const DxvkRenderTargets&    renderTargets,

@@ -162,6 +162,13 @@ We build DXVK at Proton's commit for aarch64 (DXVK's `DXVK_ARCH_ARM64` code path
 guarded). Only two missing-include fixes for libc++ are needed. `dxgi.dll` and `d3d11.dll` go next to
 the exe. The app directory wins over the ARM64EC DXVK that Proton copies into `system32`.
 
+One optimization for the Frame's tiled GPU
+([patches/dxvk/0003-discard-resolved-msaa.patch](../patches/dxvk/0003-discard-resolved-msaa.patch)):
+Beat Saber draws the whole scene in one pass, 2160×2160 with 2 layers (both eyes) and 2× MSAA, and
+resolves it inside the pass. DXVK then still stored the multisampled color and depth to memory, about
+150 MB per frame that nothing reads. The patch stores them as `DONT_CARE` when a multisampled pass has a
+resolve. `BS_ARM64_KEEP_MSAA=1` restores DXVK's behavior.
+
 ### MonoPosixHelper.dll
 
 Beat Saber stores beatmaps gzip-compressed and reads them with `System.IO.Compression.GZipStream`.

@@ -91,8 +91,9 @@ In the game, app CPU time per frame went from 7.8–8.8 ms to 3.3 ms (see the RE
 
 ## Frame pacing
 
-Measured with a BeatLeader replay (Monday Not Sick Anymore, Expert+) at 2160×2160 and 120 Hz, logging
-every frame's time, with `perf` sampling all threads.
+Measured with BeatLeader replays (Monday Not Sick Anymore and STARLIGHT, Expert+) at 2160×2160 and
+120 Hz, logging every frame's time, with `perf` sampling all threads and the Frame's power rails
+(`max34417` hwmon: `vph` system, `gfx` GPU, `apc*` CPU clusters).
 
 - **LIV.** The game's LIV SDK P/Invokes `LIV_Bridge`, which only exists for x64. Every frame threw a
   `DllNotFoundException`, and BSIPA logged each one: 27,000 in one song. A stub `LIV_Bridge.dll` that
@@ -103,6 +104,11 @@ every frame's time, with `perf` sampling all threads.
   Unity's ARM64 Mono links Microsoft's UCRT `pow`, whose slow path (`_frnd`, `_fpclass`, `_decomp`,
   `_set_exp`) dominated: 61 % of the audio thread's samples. On x64 the job is Burst-compiled.
   With the player setting off, the audio thread's samples dropped by 83 % and frames over 9.5 ms by 30 %.
+- **MSAA stores.** The game draws the whole scene in one pass per frame: 2160×2160, 2 layers, 2× MSAA,
+  color resolved inside the pass. The other passes are the small bloom chain and the desktop mirror.
+  DXVK stored the multisampled color and depth after the resolve, though nothing reads them.
+  Discarding them instead: GPU time per frame 6.3 → 4.8 ms, system power 17.6 → 16.7 W
+  (STARLIGHT replay, 2160, 120 Hz, camera pinned). The picture is unchanged.
 - **GC** didn't cause hitches: the managed heap grew from 318 to 361 MB during the song and was
   never collected.
 - The remaining hitches (13–18 ms, 13–25 per song) show the main thread busy in game and mod code.
