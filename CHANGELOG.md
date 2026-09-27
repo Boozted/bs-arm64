@@ -2,14 +2,6 @@
 
 All notable changes to bs-arm64. Each release is built for one Proton build (see its release notes).
 
-## [0.1.7] – 2026-09-27
-
-### Added
-- Optional fixed foveated rendering for the Frame's GPU: start the game with `BS_ARM64_FDM=1` and DXVK
-  renders the edges of each eye at lower resolution. GPU time 4.8 → 4.2 ms per frame, system power
-  16.7 → 15.4 W (2160, 120 Hz, MSAA on). Radius and densities are set with `BS_ARM64_FDM_*`
-  variables, see [ARCHITECTURE.md](docs/ARCHITECTURE.md#graphics-dxvk). Off by default.
-
 ## [0.1.6] – 2026-09-27
 
 ### Changed
@@ -78,7 +70,6 @@ Steam, OpenXR on SteamVR and BSIPA mods.
   Harmony can patch.
 - Release packaging and GitHub workflow; the installer refuses other Proton builds.
 
-[0.1.7]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.7
 [0.1.6]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.6
 [0.1.5]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.5
 [0.1.4]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.4

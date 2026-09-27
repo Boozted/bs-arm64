@@ -28,8 +28,9 @@ A CPU micro-benchmark run inside the game's Mono runtime shows the same thing: n
 
 ## Tip: turn off Adaptive SFX
 
-In the game's player settings, turn off **Adaptive SFX**. It measures the song's loudness on the audio
-thread with thousands of `Math.Pow` calls per second. On x64 that's cheap; on ARM64, Mono's `pow` is
+Turn off **Adaptive SFX**: Solo → song selection → **Player Settings** tab in the panel next to the song
+list (not the main menu's Options). It measures the song's loudness on the audio thread with thousands
+of `Math.Pow` calls per second. On x64 that's cheap; on ARM64, Mono's `pow` is
 slow and the measurement takes most of the audio thread. With it off, frame times were steadier in a
 replay benchmark: 30 % fewer frames over 9.5 ms at 120 Hz. The trade-off: hit sounds no longer adapt
 to the song's loudness. See [docs/FINDINGS.md](docs/FINDINGS.md#frame-pacing).
