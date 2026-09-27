@@ -1,0 +1,79 @@
+# Changelog
+
+All notable changes to bs-arm64. Each release is built for one Proton build (see its release notes).
+
+## [0.1.6] – 2026-09-27
+
+### Changed
+- DXVK doesn't store multisampled render targets after resolving them inside the render pass. Beat
+  Saber resolves its 2× MSAA scene that way, so on the Frame's tiled GPU this saves writing about
+  150 MB per frame: GPU time 6.3 → 4.8 ms per frame, system power 17.6 → 16.7 W (2160, 120 Hz).
+  Anti-aliasing is unchanged. `BS_ARM64_KEEP_MSAA=1` restores DXVK's behavior.
+
+## [0.1.5] – 2026-09-27
+
+### Fixed
+- Install right after installing BSIPA failed with "still running": the installer now waits up to
+  30 s for Wine's helper processes to exit, and names the programs still running if they don't.
+
+## [0.1.4] – 2026-09-27
+
+### Added
+- ARM64 `LIV_Bridge.dll` stub. The game's LIV SDK (mixed reality capture) only ships an x64 bridge,
+  so every frame threw `DllNotFoundException` and BSIPA logged it. About 0.6 ms less CPU per frame and
+  steadier frame times. LIV capture itself is still not available.
+- Tip in the README: turn off **Adaptive SFX** in the player settings; its loudness measurement is
+  expensive on ARM64.
+
+### Fixed
+- Install and uninstall stop with a message instead of hanging when the Wine prefix is in use (game
+  still running, or a Wine process left over from an earlier launch).
+
+## [0.1.3] – 2026-09-26
+
+### Fixed
+- A version freshly downloaded in BSManager was rejected as "Beat Saber unknown": the installer now
+  reads the game version from `globalgamemanagers`, as BSManager does, instead of
+  `BeatSaberVersion.txt`, which only exists after BSIPA ran.
+
+### Changed
+- README links the Steam Frame install guide at the top.
+
+## [0.1.2] – 2026-09-26
+
+### Changed
+- README, INSTALL.md and the release notes point to the Steam Frame BSManager fork, whose ARM64 tab
+  runs this installer.
+- The installer prints its "start with" hint only when run from a terminal.
+
+### Fixed
+- Uninstall no longer brings BSIPA's Doorstop back if BSIPA was removed in between.
+
+## [0.1.1] – 2026-09-26
+
+### Added
+- `install --no-mods`: install only the ARM64 engine and leave BSIPA's files alone.
+- `launch --no-mods`: start once without mods.
+
+## [0.1.0] – 2026-09-26
+
+First release: Beat Saber 1.44.1 as a native Windows ARM64 program on Proton 11.0 (ARM64), with
+Steam, OpenXR on SteamVR and BSIPA mods.
+
+- Unity's Windows ARM64 player, downloaded by the installer together with Unity's OpenXR plugin and
+  Microsoft's ARM64 VC++ runtime.
+- `steam_api64.dll`: Steamworks flat API on top of Proton's lsteamclient, built for ARM64.
+- `lsteamclient_a64.dll`, `wineopenxr_a64.dll`: Proton's Windows halves, built for pure ARM64.
+- Patched Khronos OpenXR loader, import-patched UnityOpenXR.
+- DXVK and `MonoPosixHelper.dll` for ARM64.
+- Mods: BSIPA's Doorstop (`winhttp.dll`) for ARM64, and MonoMod.Core with a Windows ARM64 ABI so
+  Harmony can patch.
+- Release packaging and GitHub workflow; the installer refuses other Proton builds.
+
+[0.1.6]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.6
+[0.1.5]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.5
+[0.1.4]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.4
+[0.1.3]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.3
+[0.1.2]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.2
+[0.1.1]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.1
+[0.1.0]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.0
