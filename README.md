@@ -45,7 +45,7 @@ Frame's tiled GPU. In v0.1.6 it also caused frozen ghost images of the menu and 
 
 With foveated rendering the Frame's GPU renders the area you look at in full resolution and the edges
 at lower resolution. To turn it on, open Beat Saber in your **Steam** library → ⚙ → **Properties** →
-**General** → **Foveated Rendering**. BSManager reads that switch when it starts the game. With a
+**Performance** → **Foveated Rendering**. BSManager reads that switch when it starts the game. With a
 manual install, start the game with `BS_ARM64_FDM=1` instead. With SteamVR's eye tracking the
 sharp area follows your eyes, otherwise it stays around the lens centers.
 
