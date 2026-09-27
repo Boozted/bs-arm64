@@ -35,6 +35,12 @@ slow and the measurement takes most of the audio thread. With it off, frame time
 replay benchmark: 30 % fewer frames over 9.5 ms at 120 Hz. The trade-off: hit sounds no longer adapt
 to the song's loudness. See [docs/FINDINGS.md](docs/FINDINGS.md#frame-pacing).
 
+## Tip: turn off Screen Distortion
+
+In the game's graphics settings, turn off **Screen Distortion**. For the effect, the game copies the
+whole scene in the middle of every frame and keeps drawing on it, which costs a lot of GPU time on the
+Frame's tiled GPU. In v0.1.6 it also caused frozen ghost images of the menu and sabers.
+
 ## What works
 
 | Area | Status |
