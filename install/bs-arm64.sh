@@ -219,7 +219,8 @@ cmd_install() {
         "$PROTON_TAG" | "$PROTON_TAG"-*) ;;
         *) die "Proton is $(proton_version), but these DLLs were built for $PROTON_TAG; rebuild them (docs/BUILD.md)" ;;
     esac
-    for f in lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll MonoPosixHelper.dll; do
+    for f in lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll MonoPosixHelper.dll \
+             LIV_Bridge.dll; do
         [ -f "$ARTIFACTS/$f" ] || die "$ARTIFACTS/$f missing; run build.sh first (or pass --artifacts)"
     done
     cmd_fetch
@@ -245,6 +246,8 @@ cmd_install() {
     install_file "$vc/msvcp140.dll" "msvcp140.dll"
     # Native plugins, looked up by the ARM64 player in Plugins/ARM64
     install_file "$ARTIFACTS/steam_api64.dll" "$plugins/steam_api64.dll"
+    # The game's LIV SDK has an x64-only bridge; without this stub it throws every frame
+    install_file "$ARTIFACTS/LIV_Bridge.dll" "$plugins/LIV_Bridge.dll"
     # lsteamclient_a64.dll lives only in the prefix runtime dir (C:\bs-arm64): BSIPA's
     # anti-piracy check rejects large '*steam*' files inside the game folder.
     if [ -f "$INSTANCE/$plugins/lsteamclient_a64.dll" ]; then

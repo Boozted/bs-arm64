@@ -89,6 +89,30 @@ In the game, app CPU time per frame went from 7.8–8.8 ms to 3.3 ms (see the RE
 - A game whose VR session never opens spins at over 200 % CPU. Always stop test instances
   (`wineserver -k` on the prefix).
 
+## Frame pacing
+
+Measured with a BeatLeader replay (Monday Not Sick Anymore, Expert+) at 2160×2160 and 120 Hz, logging
+every frame's time, with `perf` sampling all threads.
+
+- **LIV.** The game's LIV SDK P/Invokes `LIV_Bridge`, which only exists for x64. Every frame threw a
+  `DllNotFoundException`, and BSIPA logged each one: 27,000 in one song. A stub `LIV_Bridge.dll` that
+  reports "no capture" removed them. App CPU went from 5.3 to 4.7 ms per frame, and frames over
+  9.5 ms dropped by 23 %.
+- **Adaptive SFX.** `AdaptiveSfxVolume.OnAudioFilterRead` measures the song's loudness
+  (`LufsMetering.LufsMeter.MomentaryLoudness`, `CalculateRmsBlockJob`) with many `Math.Pow` calls.
+  Unity's ARM64 Mono links Microsoft's UCRT `pow`, whose slow path (`_frnd`, `_fpclass`, `_decomp`,
+  `_set_exp`) dominated: 61 % of the audio thread's samples. On x64 the job is Burst-compiled.
+  With the player setting off, the audio thread's samples dropped by 83 % and frames over 9.5 ms by 30 %.
+- **GC** didn't cause hitches: the managed heap grew from 318 to 361 MB during the song and was
+  never collected.
+- The remaining hitches (13–18 ms, 13–25 per song) show the main thread busy in game and mod code.
+  They vary between runs; not analysed further.
+
+Symbols for Unity's ARM64 Mono are on Unity's symbol server
+(`https://symbolserver.unity3d.com/mono-2.0-bdwgc.pdb/<guid><age>/mono-2.0-bdwgc.pdb`), and
+`llvm-symbolizer --pdb` resolves them. For JIT-compiled code, `mono_jit_info_table_find` and
+`mono_method_full_name` (both exported) map an address to its method inside the running game.
+
 ## Mods
 
 - BSIPA 4.3.7 ships MonoMod.Core 1.3.3, which has an `Arm64Arch`, and Harmony 2.16. Its
@@ -125,4 +149,4 @@ In the game, app CPU time per frame went from 7.8–8.8 ms to 3.3 ms (see the RE
   swaps in a rebuilt `MonoMod.Core.dll`.
 - **SiraUtil XR restart vs. standby.** Look into why Unity doesn't recreate the eye textures when
   the headset goes into standby during SiraUtil's XR restart.
-- **LIV.** No ARM64 `LIV_Bridge.dll`; LIV's SDK would have to provide one.
+- **LIV.** Capture needs a real ARM64 `LIV_Bridge.dll` from LIV; the stub only stops the errors.

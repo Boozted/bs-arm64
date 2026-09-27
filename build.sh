@@ -10,10 +10,12 @@
 #   MonoPosixHelper.dll   Mono's zlib helper (System.IO.Compression) for Windows ARM64
 #   winhttp.dll           BSIPA's Doorstop injector (mod loader entry point) for Windows ARM64
 #   MonoMod.Core.dll      MonoMod.Core as shipped by BSIPA, plus the Windows ARM64 ABI (Harmony)
+#   LIV_Bridge.dll        stub for the LIV SDK's x64-only native bridge (reports: no LIV capture)
 #   patch_unityopenxr.py  copied for install/
 #
 # Usage: ./build.sh [step...]   steps: toolchain fetch wine-tools lsteamclient wineopenxr
 #                                      steam-api openxr-loader dxvk monoposixhelper doorstop monomod
+#                                      liv-bridge
 #        (default: all, in that order)
 #        ./build.sh package        release tarball of out/ + installer + licenses into dist/
 #                                  (version: $BS_ARM64_VERSION, else `git describe --tags`)
@@ -249,6 +251,13 @@ step_doorstop() {
         -lkernel32 -luser32 -lshell32 -ladvapi32 -lshlwapi -lucrt
 }
 
+# The game's LIV SDK (mixed reality capture) P/Invokes LIV_Bridge, which only exists for x64.
+# Without an ARM64 one, LIV.dll throws DllNotFoundException every frame.
+step_liv_bridge() {
+    log "LIV_Bridge.dll (stub)"
+    $CC -shared -Os -s -o "$OUT/LIV_Bridge.dll" "$ROOT/src/liv-bridge/liv_bridge.c"
+}
+
 # Harmony (via MonoMod.Core) has no default ABI for Windows ARM64 and refuses to patch.
 # Rebuild the exact MonoMod.Core that BSIPA ships with the one-line ABI fix.
 # Needs a .NET 10 SDK (dotnet on PATH).
@@ -272,7 +281,7 @@ step_monomod() {
 
 # The DLLs a release ships; the installer needs all of them.
 RELEASE_DLLS=(lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll
-              MonoPosixHelper.dll winhttp.dll MonoMod.Core.dll)
+              MonoPosixHelper.dll winhttp.dll MonoMod.Core.dll LIV_Bridge.dll)
 
 # Release tarball in dist/: the DLLs, the installer and its helpers, docs, the upstream
 # licenses, and SOURCES.md (where the corresponding source is, for the LGPL parts).
@@ -335,7 +344,7 @@ license is in \`licenses/\`; this project's own code is MIT (\`LICENSE\`).
 
 | Component | Source |
 |---|---|
-| bs-arm64 (build script, patches, steam_api64, installer) | $repo/tree/$rev |
+| bs-arm64 (build script, patches, steam_api64, LIV_Bridge stub, installer) | $repo/tree/$rev |
 | Proton $PROTON_TAG (lsteamclient, wineopenxr, Steamworks SDK headers) | https://github.com/ValveSoftware/Proton/tree/$PROTON_TAG |
 | Wine, Proton's fork (winecrt0, headers, widl, winebuild) | https://github.com/ValveSoftware/wine/tree/$WINE_COMMIT |
 | DXVK, Proton's fork, with its submodules | https://github.com/ValveSoftware/dxvk/tree/$DXVK_COMMIT |
@@ -413,7 +422,8 @@ EOF
     ls -la "$dist"
 }
 
-ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper doorstop monomod)
+ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper doorstop monomod
+     liv-bridge)
 STEPS=("$@")
 [ ${#STEPS[@]} -eq 0 ] && STEPS=("${ALL[@]}")
 for s in "${STEPS[@]}"; do

@@ -26,6 +26,14 @@ A CPU micro-benchmark run inside the game's Mono runtime shows the same thing: n
 2–3× faster than FEX-translated x64 on everything except `Vector3` math (see
 [docs/FINDINGS.md](docs/FINDINGS.md#benchmark)).
 
+## Tip: turn off Adaptive SFX
+
+In the game's player settings, turn off **Adaptive SFX**. It measures the song's loudness on the audio
+thread with thousands of `Math.Pow` calls per second. On x64 that's cheap; on ARM64, Mono's `pow` is
+slow and the measurement takes most of the audio thread. With it off, frame times were steadier in a
+replay benchmark: 30 % fewer frames over 9.5 ms at 120 Hz. The trade-off: hit sounds no longer adapt
+to the song's loudness. See [docs/FINDINGS.md](docs/FINDINGS.md#frame-pacing).
+
 ## What works
 
 | Area | Status |
@@ -34,7 +42,7 @@ A CPU micro-benchmark run inside the game's Mono runtime shows the same thing: n
 | Steam (login, ownership, platform init, online services) | ✅ |
 | OpenXR on SteamVR, controllers, recenter | ✅ |
 | Burst-compiled code | ⚠️ x64 `lib_burst_generated.dll` can't load; Unity falls back to managed code |
-| LIV mixed-reality capture | ❌ no ARM64 `LIV_Bridge.dll` (harmless errors in the log) |
+| LIV mixed-reality capture | ❌ not available (a stub `LIV_Bridge.dll` reports "no capture") |
 | Mods: BSIPA 4.3.7 + Harmony (tested: SiraUtil, BSML, SongCore, BS Utils) | ✅ with the ARM64 Doorstop + patched MonoMod.Core |
 | Other game versions | ❌ only 1.44.1 (Unity 6000.0.40f1) |
 

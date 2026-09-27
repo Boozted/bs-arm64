@@ -50,7 +50,7 @@ In the instance (the originals go to `<instance>/.bs-arm64/backup/`, and added f
 | `dxgi.dll`, `d3d11.dll` (new) | built (DXVK aarch64) |
 | `vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll` (new) | Microsoft ARM64 runtime |
 | `openxr_loader.dll` (new, next to the exe) | built |
-| `Beat Saber_Data/Plugins/ARM64/` (new) | `steam_api64.dll`, `UnityOpenXR.dll` (patched), `openxr_loader.dll` |
+| `Beat Saber_Data/Plugins/ARM64/` (new) | `steam_api64.dll`, `LIV_Bridge.dll` (stub), `UnityOpenXR.dll` (patched), `openxr_loader.dll` |
 | `winhttp.dll` (only if BSIPA is installed) | ARM64 Doorstop |
 | `Libs/MonoMod.Core.dll` (only if BSIPA 4.3.7's MonoMod.Core 1.3.3 is installed) | patched MonoMod.Core |
 

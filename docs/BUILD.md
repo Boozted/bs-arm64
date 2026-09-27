@@ -40,6 +40,7 @@ On Ubuntu, `needrestart` can block an unattended `apt` behind an interactive pro
 | `monoposixhelper` | `zlib-helper.c` + zlib → `MonoPosixHelper.dll` |
 | `doorstop` | BSIPA's Doorstop + generated ARM64 winhttp stubs → `winhttp.dll` |
 | `monomod` | MonoMod at BSIPA's commit + ABI patch → `MonoMod.Core.dll` (net452) |
+| `liv-bridge` | `src/liv-bridge/liv_bridge.c` → `LIV_Bridge.dll` (stub for the game's LIV SDK) |
 | `package` | not part of the default run: release tarball in `dist/` (see below) |
 
 A full build from scratch takes about 15–20 minutes, mostly Wine's header generation and DXVK.

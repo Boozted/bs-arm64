@@ -30,6 +30,7 @@ Beat Saber.exe (Unity ARM64 WindowsPlayer.exe)
 ├─ Plugins/ARM64/steam_api64.dll ....... Steamworks flat API [written here]
 │    └─ lsteamclient_a64.dll ........... Proton lsteamclient PE half, aarch64 [built here]
 │         └─ lsteamclient.so ........... Proton's unix half (stock) ── Linux steamclient.so
+├─ Plugins/ARM64/LIV_Bridge.dll ........ stub: no LIV capture [written here]
 ├─ Plugins/ARM64/UnityOpenXR.dll ....... Unity UWP ARM64 build, imports patched [patched here]
 │    └─ openxr_loader.dll .............. Khronos loader, patched [built here]
 │         └─ wineopenxr_a64.dll ........ Proton wineopenxr PE half, aarch64 [built here]
@@ -171,6 +172,15 @@ and returns to the menu.
 
 We build Mono's `support/zlib-helper.c` (Unity's fork) with zlib 1.3.1 and a minimal glib shim
 ([src/monoposixhelper](../src/monoposixhelper)).
+
+### LIV_Bridge.dll
+
+The game includes the LIV SDK (mixed reality capture). `LIV.dll` P/Invokes `LIV_Bridge`, which
+only exists as `Plugins/x86_64/LIV_Bridge.dll`. On ARM64 every call threw `DllNotFoundException`,
+about once per frame, and BSIPA logged each one. That cost about 0.6 ms of CPU per frame.
+
+[src/liv-bridge/liv_bridge.c](../src/liv-bridge/liv_bridge.c) exports the same 31 functions, and
+each returns 0. `LivCaptureIsActive()` is then false, and the SDK stays idle.
 
 ### Microsoft VC++ runtime
 
