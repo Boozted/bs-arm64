@@ -2,6 +2,24 @@
 
 All notable changes to bs-arm64. Each release is built for one Proton build (see its release notes).
 
+## [0.1.7] – 2026-09-27
+
+### Fixed
+- Frozen ghost images of the menu and sabers with **Screen Distortion** on (since 0.1.6). For the
+  effect the game keeps drawing on its multisampled scene after resolving it, which the 0.1.6
+  optimization had already discarded. DXVK now stores such a target again once a later pass loads it;
+  without Screen Distortion the saving stays.
+
+### Added
+- Optional fixed foveated rendering for the Frame's GPU: start the game with `BS_ARM64_FDM=1` and DXVK
+  renders the edges of each eye at lower resolution. GPU time 4.8 → 4.2 ms per frame, system power
+  16.7 → 15.4 W (2160, 120 Hz, MSAA on). Radius and densities are set with `BS_ARM64_FDM_*`
+  variables, see [ARCHITECTURE.md](docs/ARCHITECTURE.md#graphics-dxvk). Off by default.
+
+### Changed
+- README: turn off Screen Distortion (expensive on the Frame's GPU), and where the Adaptive SFX
+  setting is (Solo → song selection → Player Settings tab).
+
 ## [0.1.6] – 2026-09-27
 
 ### Changed
@@ -70,6 +88,7 @@ Steam, OpenXR on SteamVR and BSIPA mods.
   Harmony can patch.
 - Release packaging and GitHub workflow; the installer refuses other Proton builds.
 
+[0.1.7]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.7
 [0.1.6]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.6
 [0.1.5]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.5
 [0.1.4]: https://github.com/DaVarga/bs-arm64/releases/tag/v0.1.4
