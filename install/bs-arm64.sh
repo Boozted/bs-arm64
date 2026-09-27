@@ -168,20 +168,30 @@ restore_bsipa_files() {
     done
 }
 
-# Is anything still running in the Wine prefix: the game, or a process left hanging by an
-# earlier launch? Installing would then replace files in use, and `wineserver -w` would
-# wait for it forever. Proton sets WINEPREFIX to "<compatdata>/pfx/".
-prefix_in_use() {
+# Processes still running in the Wine prefix: the game, a process left hanging by an earlier
+# launch, or Wine's helpers (wineserver, services.exe, ...) that linger for a few seconds
+# after BSManager ran IPA.exe. Installing would then replace files in use, and
+# `wineserver -w` would wait forever. Proton sets WINEPREFIX to "<compatdata>/pfx/".
+prefix_pids() {
     local pfx=$PREFIX/pfx p
-    for p in /proc/[0-9]*/environ; do
-        grep -qzxF -e "WINEPREFIX=$pfx" -e "WINEPREFIX=$pfx/" "$p" 2>/dev/null && return 0
+    for p in /proc/[0-9]*; do
+        grep -qzxF -e "WINEPREFIX=$pfx" -e "WINEPREFIX=$pfx/" "$p/environ" 2>/dev/null && echo "${p#/proc/}"
     done
-    return 1
 }
 
 require_prefix_idle() {
-    prefix_in_use || return 0
-    die "Beat Saber or another Windows program is still running in $PREFIX/pfx; close it (if nothing is open, restart the device) and try again"
+    local pids p names waiting="" end=$((SECONDS + 30))
+    while pids=$(prefix_pids); [ -n "$pids" ] && [ "$SECONDS" -lt "$end" ]; do
+        [ -n "$waiting" ] || log "waiting for Windows programs in the Wine prefix to exit"
+        waiting=1
+        sleep 1
+    done
+    [ -n "$pids" ] || return 0
+    # "C:\windows\system32\services.exe" -> "services.exe"
+    names=$(for p in $pids; do
+        tr '\0' '\n' < "/proc/$p/cmdline" 2>/dev/null | head -n1 | sed 's#.*[/\\]##'
+    done | sort -u | paste -sd, - | sed 's/,/, /g')
+    die "still running in $PREFIX/pfx: ${names:-unknown}; close it (if nothing is open, restart the device) and try again"
 }
 
 setup_prefix() {
