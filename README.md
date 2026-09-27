@@ -104,6 +104,17 @@ next to Mods for 1.44.1 instances. That tab downloads the release matching your 
 installs, reinstalls or removes it, with or without mod support. It also re-applies the ARM64 mod
 loader fixes after BSIPA is installed, and sets up the launch environment.
 
+### One-line install from this fork
+
+On the Steam Frame, with a Beat Saber 1.44.1 BSManager instance and ARM64 Proton already set up:
+
+```sh
+curl -fsSL https://github.com/Boozted/bs-arm64/releases/latest/download/install.sh | bash
+```
+
+This downloads the latest release, verifies its checksum, and installs it into the `1.44.1` instance.
+Set `BS_ARM64_INSTANCE=/path/to/instance` before the command when the instance has another name.
+
 ### By hand
 
 On the Steam Frame, with BSManager, a 1.44.1 instance, and "Proton 11.0 (ARM64)":

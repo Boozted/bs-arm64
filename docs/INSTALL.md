@@ -20,6 +20,22 @@ The installer is `install/bs-arm64.sh`. It runs on the device (Steam Frame, Stea
 
 Work on a **copy** of an instance. BSManager can duplicate instances.
 
+## One-line install
+
+The latest release can be downloaded, checksum-verified and installed into the default `1.44.1`
+BSManager instance with:
+
+```sh
+curl -fsSL https://github.com/Boozted/bs-arm64/releases/latest/download/install.sh | bash
+```
+
+For another instance, set its path explicitly:
+
+```sh
+curl -fsSL https://github.com/Boozted/bs-arm64/releases/latest/download/install.sh |
+    BS_ARM64_INSTANCE="$HOME/.local/share/BSManager/BSInstances/<copy>" bash
+```
+
 ## Commands
 
 From a release, run `./bs-arm64.sh` in the unpacked folder instead of `install/bs-arm64.sh`.

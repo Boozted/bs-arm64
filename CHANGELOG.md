@@ -2,7 +2,12 @@
 
 All notable changes to bs-arm64. Each release is built for one Proton build (see its release notes).
 
-## Unreleased
+## [0.2.2] – 2026-09-27
+
+### Added
+- A checksum-verifying one-line installer published as `install.sh` with each GitHub release.
+
+## [0.2.1] – 2026-09-27
 
 ### Fixed
 - Adaptive SFX no longer spends most of the ARM64 audio thread in UCRT `pow` when BSIPA is installed.
