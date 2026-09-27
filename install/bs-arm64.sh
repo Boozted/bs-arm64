@@ -168,6 +168,22 @@ restore_bsipa_files() {
     done
 }
 
+# Is anything still running in the Wine prefix: the game, or a process left hanging by an
+# earlier launch? Installing would then replace files in use, and `wineserver -w` would
+# wait for it forever. Proton sets WINEPREFIX to "<compatdata>/pfx/".
+prefix_in_use() {
+    local pfx=$PREFIX/pfx p
+    for p in /proc/[0-9]*/environ; do
+        grep -qzxF -e "WINEPREFIX=$pfx" -e "WINEPREFIX=$pfx/" "$p" 2>/dev/null && return 0
+    done
+    return 1
+}
+
+require_prefix_idle() {
+    prefix_in_use || return 0
+    die "Beat Saber or another Windows program is still running in $PREFIX/pfx; close it (if nothing is open, restart the device) and try again"
+}
+
 setup_prefix() {
     local pfx=$PREFIX/pfx rt=$PREFIX/pfx/$RUNTIME_DIR unix_lib=$PROTON/files/lib/wine/aarch64-unix
     [ -d "$pfx/drive_c" ] || die "Wine prefix $pfx does not exist; start any game with this prefix once first"
@@ -192,10 +208,14 @@ EOF
     # Our openxr_loader.dll prefers ActiveRuntimeARM64 over Proton's ActiveRuntime
     # (which points at the ARM64EC wineopenxr a pure ARM64 process cannot load).
     log "registry: HKLM\\Software\\Khronos\\OpenXR\\1 ActiveRuntimeARM64"
+    # Time limits: a hanging wine must end in an error message, not a stuck installer.
     PATH="$PROTON/files/bin-arm64:$PATH" WINEPREFIX=$pfx WINEDEBUG=-all \
-        "$PROTON/files/bin-arm64/wine" reg add 'HKLM\Software\Khronos\OpenXR\1' \
-        /v ActiveRuntimeARM64 /t REG_SZ /d 'C:\bs-arm64\wineopenxr_a64.json' /f >/dev/null
-    PATH="$PROTON/files/bin-arm64:$PATH" WINEPREFIX=$pfx "$PROTON/files/bin-arm64/wineserver" -w
+        timeout 180 "$PROTON/files/bin-arm64/wine" reg add 'HKLM\Software\Khronos\OpenXR\1' \
+        /v ActiveRuntimeARM64 /t REG_SZ /d 'C:\bs-arm64\wineopenxr_a64.json' /f >/dev/null ||
+        die "setting the OpenXR runtime in the Wine prefix failed or timed out"
+    PATH="$PROTON/files/bin-arm64:$PATH" WINEPREFIX=$pfx \
+        timeout 60 "$PROTON/files/bin-arm64/wineserver" -w ||
+        die "Wine in $pfx did not shut down; restart the device and try again"
 }
 
 # "1.44.1": from the build string in globalgamemanagers ("1.44.1_20239", as BSManager reads it).
@@ -223,6 +243,7 @@ cmd_install() {
              LIV_Bridge.dll; do
         [ -f "$ARTIFACTS/$f" ] || die "$ARTIFACTS/$f missing; run build.sh first (or pass --artifacts)"
     done
+    require_prefix_idle
     cmd_fetch
 
     local unity=$CACHE/unity-$UNITY_VERSION/$PLAYER_VARIATION vc=$CACHE/vcredist-arm64
@@ -277,6 +298,7 @@ cmd_install() {
 cmd_uninstall() {
     INSTANCE=${POSITIONAL[0]:-}
     [ -n "$INSTANCE" ] && [ -f "$INSTANCE/$STATE_DIR/installed" ] || die "usage: uninstall <patched instance dir>"
+    require_prefix_idle
     log "restoring x64 files in $INSTANCE"
     (cd "$INSTANCE/$STATE_DIR/backup" && find . -type f -print0) | while IFS= read -r -d '' f; do
         f=${f#./}
