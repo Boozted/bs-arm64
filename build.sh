@@ -212,6 +212,8 @@ step_dxvk() {
         git -C "$src/subprojects/dxbc-spirv" apply "$ROOT/patches/dxvk/0002-dxbc-spirv-missing-include.patch"
     git -C "$src" apply --check "$ROOT/patches/dxvk/0003-discard-resolved-msaa.patch" 2>/dev/null &&
         git -C "$src" apply "$ROOT/patches/dxvk/0003-discard-resolved-msaa.patch"
+    git -C "$src" apply --check "$ROOT/patches/dxvk/0004-fixed-foveation.patch" 2>/dev/null &&
+        git -C "$src" apply "$ROOT/patches/dxvk/0004-fixed-foveation.patch"
     cat > "$OBJ/dxvk-cross-aarch64.txt" <<EOF
 [binaries]
 c = '$CC'

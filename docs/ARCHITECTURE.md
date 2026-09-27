@@ -169,6 +169,33 @@ resolves it inside the pass. DXVK then still stored the multisampled color and d
 150 MB per frame that nothing reads. The patch stores them as `DONT_CARE` when a multisampled pass has a
 resolve. `BS_ARM64_KEEP_MSAA=1` restores DXVK's behavior.
 
+Optional fixed foveated rendering
+([patches/dxvk/0004-fixed-foveation.patch](../patches/dxvk/0004-fixed-foveation.patch)), off unless
+`BS_ARM64_FDM=1`. DXVK then enables `VK_EXT_fragment_density_map` and attaches one density map to every
+square 2-layer render target of at least 1024 px, which is the stereo eye pass. The map has full density
+around each lens center and less towards the edges; Turnip renders those tiles at lower resolution.
+Pipelines drawn into that pass get the density-map flag, so it's part of the pipeline state.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BS_ARM64_FDM_CX`, `BS_ARM64_FDM_CY` | 0.5, 0.59 | center, as a fraction of width and height |
+| `BS_ARM64_FDM_INNER` | 0.30 | radius of full density, as a fraction of the width |
+| `BS_ARM64_FDM_OUTER_R` | 0.50 | radius where the ring ends |
+| `BS_ARM64_FDM_MID` | 0.5 | density of the ring |
+| `BS_ARM64_FDM_OUTER` | 0.25 | density outside |
+| `BS_ARM64_FDM_UNIFORM` | – | one density everywhere, for testing |
+
+Turnip-specific details:
+- Turnip reads the density map on the CPU while it records the render pass, from the image's own
+  memory. The map is therefore a linear, host-visible image that DXVK writes once from the CPU; a GPU
+  upload into an optimal image read as zeros.
+- Densities are rounded to 1, 1/2, 1/4 and 1/8 per axis, in 32×32 px texels.
+- Turnip turns the density map off in a pass that loads or stores a multisampled attachment, so this
+  depends on 0003.
+
+A stronger profile, checked in the headset: `BS_ARM64_FDM_INNER=0.20 BS_ARM64_FDM_OUTER_R=0.35`.
+The defaults are hard to notice.
+
 ### MonoPosixHelper.dll
 
 Beat Saber stores beatmaps gzip-compressed and reads them with `System.IO.Compression.GZipStream`.

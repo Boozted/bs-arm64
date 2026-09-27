@@ -109,6 +109,10 @@ Measured with BeatLeader replays (Monday Not Sick Anymore and STARLIGHT, Expert+
   DXVK stored the multisampled color and depth after the resolve, though nothing reads them.
   Discarding them instead: GPU time per frame 6.3 → 4.8 ms, system power 17.6 → 16.7 W
   (STARLIGHT replay, 2160, 120 Hz, camera pinned). The picture is unchanged.
+- **Fixed foveated rendering** (`BS_ARM64_FDM=1`, default profile) on top of that: GPU time 4.8 →
+  4.2–4.3 ms, GPU rail 2.97 → 2.40–2.44 W, system power 16.7 → 15.4–15.6 W (two runs). Without MSAA,
+  foveation saved less (4.7 → 4.5 ms). SteamVR's own foveation (`XR_FB_foveation`) would need the eye
+  images created through OpenXR; Valve's `fdm_injection` layer targets Android and doesn't apply.
 - **GC** didn't cause hitches: the managed heap grew from 318 to 361 MB during the song and was
   never collected.
 - The remaining hitches (13–18 ms, 13–25 per song) show the main thread busy in game and mod code.
