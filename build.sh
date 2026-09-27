@@ -10,12 +10,13 @@
 #   MonoPosixHelper.dll   Mono's zlib helper (System.IO.Compression) for Windows ARM64
 #   winhttp.dll           BSIPA's Doorstop injector (mod loader entry point) for Windows ARM64
 #   MonoMod.Core.dll      MonoMod.Core as shipped by BSIPA, plus the Windows ARM64 ABI (Harmony)
+#   BsArm64.AdaptiveSfxFix.dll  Harmony patch for ARM64's slow managed Adaptive SFX RMS job
 #   LIV_Bridge.dll        stub for the LIV SDK's x64-only native bridge (reports: no LIV capture)
 #   patch_unityopenxr.py  copied for install/
 #
 # Usage: ./build.sh [step...]   steps: toolchain fetch wine-tools lsteamclient wineopenxr
 #                                      steam-api openxr-loader dxvk monoposixhelper doorstop monomod
-#                                      liv-bridge
+#                                      adaptive-sfx-fix liv-bridge
 #        (default: all, in that order)
 #        ./build.sh package        release tarball of out/ + installer + licenses into dist/
 #                                  (version: $BS_ARM64_VERSION, else `git describe --tags`)
@@ -294,9 +295,38 @@ step_monomod() {
     cp "$src/artifacts/bin/MonoMod.Core/release_net452/MonoMod.Core.dll" "$OUT/"
 }
 
+# On ARM64 the game's CalculateRmsBlockJob falls back from Burst to Mono. Math.Pow(sample, 2)
+# then dominates the audio thread. This BSIPA plugin changes only those calls to sample * sample.
+step_adaptive_sfx_fix() {
+    log "BsArm64.AdaptiveSfxFix.dll"
+    command -v dotnet >/dev/null || { echo "dotnet (.NET 10 SDK) not found; cannot build Adaptive SFX fix" >&2; exit 1; }
+    local refs=$DEPS/bsipa-$BSIPA_VERSION zip=$DEPS/bsipa-$BSIPA_VERSION.zip
+    if [ ! -f "$refs/IPA.Loader.dll" ] || [ ! -f "$refs/0Harmony.dll" ]; then
+        curl -fsSL -o "$zip" \
+            "https://github.com/nike4613/BeatSaber-IPA-Reloaded/releases/download/$BSIPA_VERSION/BSIPA-net472-x64.zip"
+        echo "$BSIPA_RELEASE_SHA256  $zip" | sha256sum -c -
+        rm -rf "$refs"
+        mkdir -p "$refs"
+        python3 - "$zip" "$refs" <<'PY'
+import pathlib, sys, zipfile
+source, destination = sys.argv[1], pathlib.Path(sys.argv[2])
+members = {
+    'IPA/Data/Managed/IPA.Loader.dll': 'IPA.Loader.dll',
+    'IPA/Libs/0Harmony.dll': '0Harmony.dll',
+}
+with zipfile.ZipFile(source) as archive:
+    for member, name in members.items():
+        (destination / name).write_bytes(archive.read(member))
+PY
+    fi
+    dotnet build "$ROOT/src/adaptive-sfx-fix/BsArm64.AdaptiveSfxFix.csproj" -c Release \
+        -p:BsipaReferenceDir="$refs" -o "$OBJ/adaptive-sfx-fix" --nologo >/dev/null
+    cp "$OBJ/adaptive-sfx-fix/BsArm64.AdaptiveSfxFix.dll" "$OUT/"
+}
+
 # The DLLs a release ships; the installer needs all of them.
 RELEASE_DLLS=(lsteamclient_a64.dll wineopenxr_a64.dll steam_api64.dll openxr_loader.dll dxgi.dll d3d11.dll
-              MonoPosixHelper.dll winhttp.dll MonoMod.Core.dll LIV_Bridge.dll
+              MonoPosixHelper.dll winhttp.dll MonoMod.Core.dll BsArm64.AdaptiveSfxFix.dll LIV_Bridge.dll
               XrApiLayer_bs_arm64_gaze.dll)
 
 # Release tarball in dist/: the DLLs, the installer and its helpers, docs, the upstream
@@ -310,12 +340,12 @@ step_package() {
     for f in "${RELEASE_DLLS[@]}"; do
         [ -f "$OUT/$f" ] || { echo "$OUT/$f missing; run the full build first" >&2; exit 1; }
     done
-    # Every native DLL must be pure ARM64 (0xaa64); MonoMod.Core.dll is IL.
+    # Every native DLL must be pure ARM64 (0xaa64); these two managed assemblies are IL.
     python3 - "$OUT" "${RELEASE_DLLS[@]}" <<'PY'
 import struct, sys
 bad = []
 for name in sys.argv[2:]:
-    if name == 'MonoMod.Core.dll':
+    if name in {'MonoMod.Core.dll', 'BsArm64.AdaptiveSfxFix.dll'}:
         continue
     d = open(f'{sys.argv[1]}/{name}', 'rb').read(4096)
     machine = struct.unpack_from('<H', d, struct.unpack_from('<I', d, 0x3c)[0] + 4)[0]
@@ -367,7 +397,7 @@ license is in \`licenses/\`; this project's own code is MIT (\`LICENSE\`).
 | OpenXR-SDK $OPENXR_SDK_TAG | https://github.com/KhronosGroup/OpenXR-SDK/tree/$OPENXR_SDK_TAG |
 | zlib $ZLIB_VERSION | https://github.com/madler/zlib/releases/tag/v$ZLIB_VERSION |
 | Mono \`support/zlib-helper.c\` (Unity's fork) | https://github.com/Unity-Technologies/mono/blob/$UNITY_MONO_COMMIT/support/zlib-helper.c |
-| BSIPA's Doorstop | https://github.com/nike4613/BeatSaber-IPA-Reloaded/tree/$BSIPA_COMMIT/Doorstop |
+| BSIPA $BSIPA_VERSION (Doorstop source and managed plugin references) | https://github.com/nike4613/BeatSaber-IPA-Reloaded/tree/$BSIPA_COMMIT |
 | MonoMod | https://github.com/MonoMod/MonoMod/tree/$MONOMOD_COMMIT |
 | llvm-mingw $LLVM_MINGW_VERSION (toolchain; statically linked runtime parts) | https://github.com/mstorsjo/llvm-mingw/releases/tag/$LLVM_MINGW_VERSION |
 
@@ -438,7 +468,7 @@ EOF
     ls -la "$dist"
 }
 
-ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper doorstop monomod
+ALL=(toolchain fetch wine-tools lsteamclient wineopenxr steam-api openxr-loader dxvk monoposixhelper doorstop monomod adaptive-sfx-fix
      liv-bridge gaze-layer)
 STEPS=("$@")
 [ ${#STEPS[@]} -eq 0 ] && STEPS=("${ALL[@]}")

@@ -134,10 +134,11 @@ swap_bsipa_file() { # <instance-relative path> <replacement>
     cp "$src" "$INSTANCE/$rel"
 }
 
-# BSIPA (mod loader) needs two ARM64 fixes; applied only when BSIPA is installed.
+# BSIPA (mod loader) needs ARM64 fixes; applied only when BSIPA is installed.
 # Run install again after (re)installing BSIPA, since IPA.exe copies its x64 files back.
 #  - Doorstop (winhttp.dll): its x64 build can't load into the ARM64 player.
 #  - MonoMod.Core.dll: has no Windows ARM64 ABI, so Harmony can't patch anything.
+#  - Adaptive SFX fix: replaces the RMS job's slow Math.Pow(sample, 2) calls.
 install_bsipa_fixes() {
     [ -f "$INSTANCE/winhttp.dll" ] || return 0
     [ -f "$ARTIFACTS/winhttp.dll" ] || die "BSIPA is installed but $ARTIFACTS/winhttp.dll is missing; run build.sh"
@@ -154,6 +155,12 @@ install_bsipa_fixes() {
     [ -f "$ARTIFACTS/MonoMod.Core.dll" ] || die "$ARTIFACTS/MonoMod.Core.dll is missing; run build.sh monomod"
     log "BSIPA found: installing MonoMod.Core with the Windows ARM64 ABI"
     swap_bsipa_file "$core" "$ARTIFACTS/MonoMod.Core.dll"
+
+    local adaptive=Plugins/BsArm64.AdaptiveSfxFix.dll
+    [ -f "$ARTIFACTS/BsArm64.AdaptiveSfxFix.dll" ] ||
+        die "$ARTIFACTS/BsArm64.AdaptiveSfxFix.dll is missing; run build.sh adaptive-sfx-fix"
+    log "BSIPA found: installing the Adaptive SFX ARM64 performance fix"
+    install_file "$ARTIFACTS/BsArm64.AdaptiveSfxFix.dll" "$adaptive"
 }
 
 # --no-mods after an install with mods: put BSIPA's own files back.
@@ -166,6 +173,15 @@ restore_bsipa_files() {
             cp -p "$INSTANCE/$STATE_DIR/backup/$rel" "$INSTANCE/$rel"
         fi
     done
+    local adaptive=Plugins/BsArm64.AdaptiveSfxFix.dll
+    if [ -f "$INSTANCE/$STATE_DIR/backup/$adaptive" ]; then
+        log "no mods: restoring $adaptive"
+        cp -p "$INSTANCE/$STATE_DIR/backup/$adaptive" "$INSTANCE/$adaptive"
+    elif grep -qxF "$adaptive" "$INSTANCE/$STATE_DIR/added" 2>/dev/null; then
+        log "no mods: removing $adaptive"
+        rm -f "$INSTANCE/$adaptive"
+        sed -i "\#^$adaptive\$#d" "$INSTANCE/$STATE_DIR/added"
+    fi
 }
 
 # Processes still running in the Wine prefix: the game, a process left hanging by an earlier

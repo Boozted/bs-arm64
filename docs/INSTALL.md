@@ -53,6 +53,7 @@ In the instance (the originals go to `<instance>/.bs-arm64/backup/`, and added f
 | `Beat Saber_Data/Plugins/ARM64/` (new) | `steam_api64.dll`, `LIV_Bridge.dll` (stub), `UnityOpenXR.dll` (patched), `openxr_loader.dll` |
 | `winhttp.dll` (only if BSIPA is installed) | ARM64 Doorstop |
 | `Libs/MonoMod.Core.dll` (only if BSIPA 4.3.7's MonoMod.Core 1.3.3 is installed) | patched MonoMod.Core |
+| `Plugins/BsArm64.AdaptiveSfxFix.dll` (only if BSIPA is installed) | removes the slow ARM64 `Math.Pow` path while keeping Adaptive SFX working |
 
 The game data and `Managed/*.dll` are not touched. The x64 plugins stay in `Plugins/x86_64/`, where the
 ARM64 player ignores them.

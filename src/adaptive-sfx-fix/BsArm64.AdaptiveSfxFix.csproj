@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>5</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>BsArm64.AdaptiveSfxFix</AssemblyName>
+    <RootNamespace>BsArm64.AdaptiveSfxFix</RootNamespace>
+    <Version>0.1.0</Version>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="IPA.Loader" HintPath="$(BsipaReferenceDir)/IPA.Loader.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(BsipaReferenceDir)/0Harmony.dll" Private="false" />
+    <EmbeddedResource Include="manifest.json" LogicalName="manifest.json" />
+  </ItemGroup>
+
+  <Target Name="CheckBsipaReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(BsipaReferenceDir)' == ''" Text="Set BsipaReferenceDir to the extracted BSIPA reference directory." />
+    <Error Condition="!Exists('$(BsipaReferenceDir)/IPA.Loader.dll')" Text="IPA.Loader.dll was not found in BsipaReferenceDir." />
+    <Error Condition="!Exists('$(BsipaReferenceDir)/0Harmony.dll')" Text="0Harmony.dll was not found in BsipaReferenceDir." />
+  </Target>
+</Project>

@@ -2,6 +2,13 @@
 
 All notable changes to bs-arm64. Each release is built for one Proton build (see its release notes).
 
+## Unreleased
+
+### Fixed
+- Adaptive SFX no longer spends most of the ARM64 audio thread in UCRT `pow` when BSIPA is installed.
+  A bundled Harmony plugin replaces only `CalculateRmsBlockJob`'s `Math.Pow(sample, 2)` calls with
+  multiplication, preserving adaptive hit-sound volume. `--no-mods` installs are unchanged.
+
 ## [0.2.0] – 2026-09-27
 
 ### Added

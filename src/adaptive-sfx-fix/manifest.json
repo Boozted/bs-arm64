@@ -1,0 +1,15 @@
+{
+  "$schema": "https://github.com/beat-saber-modding-group/BSIPA-MetadataFileSchema/blob/master/Schema.json",
+  "id": "BsArm64AdaptiveSfxFix",
+  "name": "bs-arm64 Adaptive SFX Fix",
+  "author": "DaVarga",
+  "version": "0.1.0",
+  "description": "Avoids ARM64 Mono's slow Math.Pow path in Adaptive SFX loudness metering.",
+  "gameVersion": "1.44.1",
+  "dependsOn": {
+    "BSIPA": "^4.3.7"
+  },
+  "misc": {
+    "plugin-hint": "BsArm64.AdaptiveSfxFix.Plugin"
+  }
+}

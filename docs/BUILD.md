@@ -14,8 +14,9 @@ sudo apt install git curl python3 make gcc flex bison autoconf perl \
 
 `build.sh` downloads the llvm-mingw toolchain (pinned release) itself.
 
-The `monomod` step also needs a **.NET 10 SDK** with `dotnet` on `PATH`
-(https://dot.net/v1/dotnet-install.sh). Without it, the step is skipped.
+The `monomod` and `adaptive-sfx-fix` steps also need a **.NET 10 SDK** with `dotnet` on `PATH`
+(https://dot.net/v1/dotnet-install.sh). `monomod` is skipped without it; `adaptive-sfx-fix` is a
+required release artifact and stops with an error.
 
 On Ubuntu, `needrestart` can block an unattended `apt` behind an interactive prompt. Use
 `sudo NEEDRESTART_MODE=a apt install …`.
@@ -40,6 +41,7 @@ On Ubuntu, `needrestart` can block an unattended `apt` behind an interactive pro
 | `monoposixhelper` | `zlib-helper.c` + zlib → `MonoPosixHelper.dll` |
 | `doorstop` | BSIPA's Doorstop + generated ARM64 winhttp stubs → `winhttp.dll` |
 | `monomod` | MonoMod at BSIPA's commit + ABI patch → `MonoMod.Core.dll` (net452) |
+| `adaptive-sfx-fix` | BSIPA/Harmony plugin that replaces `Math.Pow(sample, 2)` in the managed Adaptive SFX RMS job → `BsArm64.AdaptiveSfxFix.dll` (net472) |
 | `liv-bridge` | `src/liv-bridge/liv_bridge.c` → `LIV_Bridge.dll` (stub for the game's LIV SDK) |
 | `package` | not part of the default run: release tarball in `dist/` (see below) |
 

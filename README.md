@@ -26,14 +26,17 @@ A CPU micro-benchmark run inside the game's Mono runtime shows the same thing: n
 2–3× faster than FEX-translated x64 on everything except `Vector3` math (see
 [docs/FINDINGS.md](docs/FINDINGS.md#benchmark)).
 
-## Tip: turn off Adaptive SFX
+## Adaptive SFX
 
-Turn off **Adaptive SFX**: Solo → song selection → **Player Settings** tab in the panel next to the song
-list (not the main menu's Options). It measures the song's loudness on the audio thread with thousands
-of `Math.Pow` calls per second. On x64 that's cheap; on ARM64, Mono's `pow` is
-slow and the measurement takes most of the audio thread. With it off, frame times were steadier in a
-replay benchmark: 30 % fewer frames over 9.5 ms at 120 Hz. The trade-off: hit sounds no longer adapt
-to the song's loudness. See [docs/FINDINGS.md](docs/FINDINGS.md#frame-pacing).
+With BSIPA installed, bs-arm64 includes a small Harmony patch that keeps **Adaptive SFX** working but
+replaces its RMS meter's `Math.Pow(sample, 2)` calls with multiplication. Those calls fall back from
+Burst to ARM64 Mono and previously took most of the audio thread. The plugin is installed
+automatically as `Plugins/BsArm64.AdaptiveSfxFix.dll`.
+
+For a `--no-mods` install, turn Adaptive SFX off: Solo → song selection → **Player Settings** in the
+panel next to the song list (not the main menu's Options). Before the patch, disabling it produced
+30 % fewer frames over 9.5 ms at 120 Hz in a replay benchmark. See
+[docs/FINDINGS.md](docs/FINDINGS.md#frame-pacing).
 
 ## Tip: turn off Screen Distortion
 
@@ -88,6 +91,7 @@ piece around it that only existed as x64 or ARM64EC has an ARM64 replacement. De
 | `MonoPosixHelper.dll` | Mono's zlib helper + zlib; Unity doesn't ship one for ARM64 |
 | `vcruntime140*.dll`, `msvcp140.dll` | Microsoft VC++ ARM64 redistributable (downloaded) |
 | `winhttp.dll` (mods) | BSIPA's Doorstop injector, rebuilt for ARM64 ([src/doorstop](src/doorstop)) |
+| `BsArm64.AdaptiveSfxFix.dll` (mods) | Harmony patch that keeps Adaptive SFX off ARM64 Mono's slow `Math.Pow` path ([src/adaptive-sfx-fix](src/adaptive-sfx-fix)) |
 | `Libs/MonoMod.Core.dll` (mods) | MonoMod.Core as shipped by BSIPA + Windows ARM64 ABI ([patches/monomod](patches/monomod)) |
 
 ## Quick start

@@ -103,7 +103,10 @@ Measured with BeatLeader replays (Monday Not Sick Anymore and STARLIGHT, Expert+
   (`LufsMetering.LufsMeter.MomentaryLoudness`, `CalculateRmsBlockJob`) with many `Math.Pow` calls.
   Unity's ARM64 Mono links Microsoft's UCRT `pow`, whose slow path (`_frnd`, `_fpclass`, `_decomp`,
   `_set_exp`) dominated: 61 % of the audio thread's samples. On x64 the job is Burst-compiled.
-  With the player setting off, the audio thread's samples dropped by 83 % and frames over 9.5 ms by 30 %.
+  With the player setting off, the audio thread's samples dropped by 83 % and frames over 9.5 ms by
+  30 %. `BsArm64.AdaptiveSfxFix.dll` now transpiles only `CalculateRmsBlockJob.Execute`, replacing
+  `Math.Pow(sample, 2)` with `sample * sample`; Adaptive SFX remains functional. It is a BSIPA plugin,
+  so `--no-mods` installs should still turn the setting off.
 - **MSAA stores.** The game draws the whole scene in one pass per frame: 2160×2160, 2 layers, 2× MSAA,
   color resolved inside the pass. The other passes are the small bloom chain and the desktop mirror.
   DXVK stored the multisampled color and depth after the resolve, though nothing reads them.
